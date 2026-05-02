@@ -18,8 +18,14 @@ DEFAULT_COSMO_PARAMS = dict(
 
 @dataclass(frozen=True)
 class GridConfig:
-    """Gauss-Legendre integration grid sizes used by Sigma_prj pipeline."""
-    Nz: int = 16
+    """Integration grid sizes used by Sigma_prj pipeline.
+
+    ``Nz`` is split evenly into foreground + background halves in
+    `_P_operator`, each log-spaced in |Delta chi|.  Paper Fig. 2
+    agreement required Nz >= ~50 total; default of 80 (40+40) reaches
+    sub-percent convergence on the z-spike integrand.
+    """
+    Nz: int = 80
     NM: int = 24
     Nth: int = 20
     ln_M_min: float = 12.5 * 2.302585092994046   # log(10^12.5)

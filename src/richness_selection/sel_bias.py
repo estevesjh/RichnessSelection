@@ -144,22 +144,40 @@ class SelBias:
         chi_fg_lo = float(self.cosmo.chi(z_fg_lo))
         chi_bg_hi = float(self.cosmo.chi(z_bg_hi))
 
-        n_fg = max(4, g.Nz // 2)
-        n_bg = g.Nz - n_fg
+        # Fixed node count per half (default GridConfig.Nz = 80 -> 40 fg + 40 bg).
+        # Log-spacing in |Delta chi| automatically gives ~0.005 effective dz
+        # at the outer edge and much finer resolution near the inner edge.
+        # Simpson requires an odd number of points per half.
+        half = max(5, g.Nz // 2)
+        if half % 2 == 0:
+            half += 1
+        n_fg = n_bg = half
 
-        # Log-spaced LoS distances from epsilon up to the edge of support
+        # Step 3: pin the inner edge of the LoS grid at the halo exclusion
+        # radius R_excl = R_lambda(lob) * (1 + zob). Inside exclusion, the
+        # integrand is identically zero via the xi_NL mask; spacing nodes
+        # there just wastes weight.  Starting at R_excl also places a node
+        # exactly on the step-edge of the integrand (xi_NL rises sharply
+        # just outside exclusion), which otherwise spoils Simpson/trapz
+        # convergence.
+        R_excl = R_lambda(lob) * (1.0 + zob)
+
         dis_fg_max = chi_o - chi_fg_lo
         dis_bg_max = chi_bg_hi - chi_o
-        dis_min_fg = max(1e-3, 1e-4 * dis_fg_max)
-        dis_min_bg = max(1e-3, 1e-4 * dis_bg_max)
-        dis_fg = np.geomspace(dis_min_fg, dis_fg_max, n_fg)
-        dis_bg = np.geomspace(dis_min_bg, dis_bg_max, n_bg)
+        # Inner edge sits just outside the exclusion; clamp so we never
+        # cross dis_max if R_excl happens to exceed the photo-z support.
+        dis_min_fg = min(R_excl, 0.5 * dis_fg_max)
+        dis_min_bg = min(R_excl, 0.5 * dis_bg_max)
+
+        u_fg = np.linspace(np.log(dis_min_fg), np.log(dis_fg_max), n_fg)
+        u_bg = np.linspace(np.log(dis_min_bg), np.log(dis_bg_max), n_bg)
+        dis_fg = np.exp(u_fg)
+        dis_bg = np.exp(u_bg)
 
         # Convert LoS distances to redshifts (foreground < zob, background > zob)
         chi_fg = chi_o - dis_fg[::-1]           # ascending in z
         chi_bg = chi_o + dis_bg
         chi_zs = np.concatenate([chi_fg, chi_bg])
-        # Invert cosmo.chi to get z
         zs_ref = np.linspace(0.0, 2.0, 2000)
         chi_ref = self.cosmo.chi(zs_ref)
         zs = np.interp(chi_zs, chi_ref, zs_ref)      # (Nz,)
@@ -167,13 +185,44 @@ class SelBias:
         chi_z = self.cosmo.chi(zs)                    # (Nz,)
         dV = self.cosmo.dV_dzdOm(zs)                  # (Nz,)
         wz_kern = w_z(zs, zob)                        # (Nz,)
-        # Trapezoidal weights in z (we integrate in z, not LoS distance, since
-        # dV_dzdOm is already per-dz).
-        dz = np.diff(zs)
-        wzs = np.zeros_like(zs)
-        wzs[0]  = 0.5 * dz[0]
-        wzs[-1] = 0.5 * dz[-1]
-        wzs[1:-1] = 0.5 * (dz[:-1] + dz[1:])
+
+        # Simpson weights in u = ln|Delta chi| on each half, with Jacobian
+        # to convert the integral to z:
+        #   int dz f(z) = int du [dz/du] f(z(u))
+        # with  dz/du = |dz/dchi| * |dchi/du| = (1 / chi'(z)) * |Delta chi|
+        # and chi'(z) = c/H(z) = c * dV^(1/3) ... easier: numerical dz/du.
+        def _simpson_weights_u(u):
+            """Simpson 1/3 weights over a uniform grid of u."""
+            n = u.size
+            if n % 2 == 0:
+                raise ValueError('Simpson needs an odd number of nodes')
+            h = (u[-1] - u[0]) / (n - 1)
+            w = np.ones(n)
+            w[1:-1:2] = 4.0  # odd interior
+            w[2:-1:2] = 2.0  # even interior (not including first or last)
+            return w * h / 3.0
+
+        w_u_fg = _simpson_weights_u(u_fg)      # (n_fg,)
+        w_u_bg = _simpson_weights_u(u_bg)      # (n_bg,)
+
+        # Jacobian dz/du per node: dz/du = |dchi/du| / (dchi/dz)
+        # dchi/du = |Delta chi| = exp(u) for both halves
+        # dchi/dz = c/H(z), computed numerically from the chi(z) table
+        # since cosmo exposes chi but not H directly.
+        # We can get dchi/dz from the chi_ref gradient for accuracy.
+        dchi_dz_ref = np.gradient(chi_ref, zs_ref)     # (2000,)
+        dchi_dz_zs = np.interp(zs, zs_ref, dchi_dz_ref)
+
+        # |dchi/du| per node: fg is reversed, so u_fg[i] maps to zs[i] where
+        # zs[:n_fg] is foreground ascending (low to zob) and dis_fg reversed.
+        dchi_du_fg = dis_fg[::-1]   # matches zs[:n_fg]
+        dchi_du_bg = dis_bg          # matches zs[n_fg:]
+        dchi_du = np.concatenate([dchi_du_fg, dchi_du_bg])
+        dz_du = dchi_du / dchi_dz_zs
+
+        # Simpson weight in z = w_u * dz/du, per half (reversing for fg)
+        w_u = np.concatenate([w_u_fg[::-1], w_u_bg])
+        wzs = w_u * dz_du
 
         # M-grid
         log10_Mmin = np.log10(self.min_mass4integral)
