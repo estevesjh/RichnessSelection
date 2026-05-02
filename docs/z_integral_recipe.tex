@@ -350,6 +350,27 @@ at \((\lob,\zob)\!=\!(20,0.5)\):
 \end{tabular}
 \end{center}
 
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figs/DE_convergence.png}
+\caption{Relative error vs \texttt{scipy.integrate.quad} truth
+(rtol\,=\,\(10^{-5}\)) for the three operators \(\Pop[1]\) (left),
+\(I_2\) (centre), and \(I_1\) (right) at
+\((\lob,\zob)=(20,0.5)\). Blue circles: Option~E (split by
+physics). Red squares: Option~D (arcsinh transform). Both axes log.
+The dotted horizontal lines mark 1\% and 0.1\%. \(\Pop[1]\)
+converges to \(\sim 0.15\%\) in both schemes regardless of
+\(N_z\) (no \(\xinl\) spike). \(I_1\) and \(I_2\) oscillate
+\emph{non-monotonically} around the truth at \(\sim 0.3\)--\(2\%\);
+Option~D is worse below \(N_z\!=\!60\) but beats Option~E at
+\(N_z\!=\!80\) and \(N_z\!=\!320\). Best-of-3 precompute timings
+(warm-up removed, cache cleared each run): at \(N_z\!=\!80\) both
+schemes take \(\approx 19\) ms; timing scales linearly
+(\(N_z\!=\!40\): 10 ms, \(N_z\!=\!160\): 37 ms, \(N_z\!=\!320\):
+81 ms). \(N_z\!\geq\!80\) is recommended.}
+\label{fig:DE_convergence}
+\end{figure}
+
 \vspace{4pt}
 Cross-check across \((\lob,\zob)\) bins at \(N_z=80\)
 (relative D/E for the integrals, absolute for the bias):
