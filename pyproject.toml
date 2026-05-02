@@ -15,6 +15,7 @@ dependencies = [
     "scipy>=1.7",
     "astropy>=5.0",
     "camb>=1.5",
+    "mcfit>=0.0.22",
 ]
 
 [project.optional-dependencies]

@@ -1,10 +1,15 @@
 import pytest
 
 from richness_selection import (
-    Cosmology, PkGrid, HMF, Bias, MOR, NFWMiscentered, SelBias, SigmaPrj,
-    DEFAULT_GRID,
+    Cosmology, PkGrid, HMF, Bias, MOR, NFWMiscentered, XiNL, SelBias,
+    SigmaPrj, DEFAULT_GRID,
 )
 from richness_selection.sigma_m import SigmaM
+
+
+@pytest.fixture(scope="session")
+def xi_nl(cosmo):
+    return XiNL(cosmo)
 
 
 @pytest.fixture(scope="session")
@@ -39,8 +44,8 @@ def mor():
 
 
 @pytest.fixture(scope="session")
-def sel_bias(cosmo, pk, hmf, bias, mor):
-    return SelBias(cosmo, pk, hmf, bias, mor)
+def sel_bias(cosmo, pk, hmf, bias, mor, xi_nl):
+    return SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi_nl)
 
 
 @pytest.fixture(scope="session")

@@ -14,7 +14,7 @@ from .nfw import NFWMiscentered
 from .sel_bias import SelBias
 from .gl import gl_nodes
 from .geometry import R_lambda
-from .photoz import sigma_z_of_z
+from .photoz import sigma_z as sigma_z_of_z
 
 
 class SigmaPrj:

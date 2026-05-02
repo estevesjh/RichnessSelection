@@ -5,6 +5,7 @@ from .hmf import HMF
 from .bias import Bias
 from .mor import MOR
 from .nfw import NFWMiscentered
+from .xi_nl import XiNL
 from .sel_bias import SelBias
 from .sigma_prj import SigmaPrj
 from .config import DEFAULT_GRID
@@ -17,6 +18,7 @@ __all__ = [
     "Bias",
     "MOR",
     "NFWMiscentered",
+    "XiNL",
     "SelBias",
     "SigmaPrj",
     "DEFAULT_GRID",
