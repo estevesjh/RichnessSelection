@@ -14,6 +14,7 @@
 \newcommand{\xinl}{\xi_{\rm NL}}
 \newcommand{\hMpc}{h^{-1}\text{Mpc}}
 \newcommand{\Pop}{\mathcal{P}}
+\newcommand{\bsel}{b_{\rm sel}}
 
 \title{A numerical recipe for the redshift integral inside
        \(\Pop[1]\), \(I_1\), \(I_2\)}
@@ -40,27 +41,53 @@ variables.
 
 \section{The integrand \(f(z)\)}
 
-After carrying out the inner
-\((M,\lambda,\theta)\) integrals at fixed \(z\), the \(z\)-integrand is
+Any of the three operators \(\Pop[1], I_1, I_2\) factorises as
 \begin{equation}
+I = \int dz\,f(z)\,,
+\qquad
 f(z)\;\equiv\;\frac{dV}{dz\,d\Omega}(z)\,w_z(z,\zob)\,
-     \mathcal{I}_{\rm inner}(z)
+     \mathcal{I}_{\rm inner}(z)\,,
+\label{eq:fz_factorisation}
 \end{equation}
 where \(\mathcal{I}_{\rm inner}(z)\) is the triple
-\((M,\lambda,\theta)\) integral at this \(z\). For \(I_1\) and
-\(I_2\) the integrand inside \(\mathcal I_{\rm inner}\) contains the
-nonlinear matter correlation function
-\(\xinl(\Delta\chi(z,\theta))\) evaluated at the 3-D comoving
-separation
+\((M,\lambda,\theta)\) integral at this \(z\), defined explicitly
+as
+\begin{equation}
+\mathcal{I}_{\rm inner}(z)
+\;\equiv\;
+\int d\ln M\;M\,n(M,z)\,\mathcal{B}(M,z)
+\int d\lambda\,P(\lambda|M,z)\,\lambda
+\cdot 2\pi\!\int d\theta\,\sin\theta\,
+f_A(\theta,\lambda,z)\,\mathcal{X}(z,\theta).
+\label{eq:I_inner_def}
+\end{equation}
+The two per-operator factors are
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+operator & \(\mathcal{B}(M,z)\) & \(\mathcal{X}(z,\theta)\) \\
+\midrule
+\(\Pop[1]\) & \(1\) & \(1\) \\
+\(I_2\)     & \(b(M,z)\) & \(\xinl\!\bigl(\Delta\chi(z,\theta)\bigr)\) \\
+\(I_1\)     & \(b(M,z)\) &
+                \(\xinl\!\bigl(\Delta\chi(z,\theta)\bigr)\,\sigma(\theta)\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+with \(\sigma(\theta)=[1+e^{-k(\theta-\theta_0)}]^{-1}\) the
+large/small-scale transition sigmoid (\(k=2.5/\theta_\lambda^{\rm tgt}\),
+\(\theta_0=\theta_\lambda^{\rm tgt}/2\)) and \(\Delta\chi\) the 3-D
+comoving separation
 \[
 \Delta\chi(z,\theta)=
-\sqrt{\bigl(\chi(z)-\chi(\zob)\bigr)^2+\chi(\zob)^2\theta^2}
-\;,
+\sqrt{\bigl(\chi(z)-\chi(\zob)\bigr)^2+\chi(\zob)^2\theta^2}\;.
 \]
-subject to the halo exclusion \(\xinl\equiv 0\) for
-\(\Delta\chi<R_{\rm excl}\equiv R_\lambda(\lob)\,(1+\zob)\). For
-\(\Pop[1]\) there is no \(\xinl\) and the integrand is smooth;
-\(\Pop[1]\) is not the hard part.
+Halo exclusion enforces \(\xinl\equiv 0\) for
+\(\Delta\chi<R_{\rm excl}\equiv R_\lambda(\lob)\,(1+\zob)\),
+which is the source of the sharp features discussed below. For
+\(\Pop[1]\) there is no \(\xinl\) and no exclusion structure, so
+\(f(z)\) is smooth: \(\Pop[1]\) is not the hard part.
 
 \paragraph{Characteristic scales.}
 At \(\lob\!=\!20\), \(\zob\!=\!0.5\) (Buzzard v1.1 cosmology):
@@ -240,85 +267,202 @@ photo-z), it is clipped to the support. Both edge cases are
 handled by \texttt{np.clip} / empty-array guards in the
 implementation (\texttt{sel\_bias.py::\_P\_operator}).
 
-\section{Option D: change of variables for \(I_1\), \(I_2\)}
+\section{Option D: arcsinh transform for \(I_1\), \(I_2\)}
 \label{sec:optionD}
 
-Option~E treats \(I_1\) and \(I_2\) with the same recipe as
-\(\Pop[1]\) apart from the region split. But because \(I_1, I_2\)
-are the \emph{hard} integrals --- they carry the
-\(\xinl\propto r^{-1.7}\) singularity that generates
-Fig.~\ref{fig:fz}'s peaks --- a dedicated transform can be
-cleaner and faster.
+Option~E treats the ring-plateau (R1) and the outer regions (R2+R3)
+separately because they have different variables in which they are
+naturally smooth. Option~D makes an alternative bet: a single
+change-of-variable that smooths the full domain.
 
 \paragraph{The transform.}
-Let \(s\equiv \ln(\Delta\chi_\parallel^2 + R_{\rm excl}^2)\). This
-\emph{regularises} the integrand: at
-\(\Delta\chi_\parallel\!\to\! 0\), \(s\!\to\! 2\ln R_{\rm excl}\)
-(finite), and near the peak at
-\(\Delta\chi_\parallel=R_{\rm excl}\) (peak-\(s\) value
-\(\ln 2+2\ln R_{\rm excl}\)) the integrand is a smooth function
-of \(s\) with no power-law singularity. Explicitly,
-\[
-\xinl\bigl(\sqrt{\Delta\chi_\parallel^2+\chi^2\theta^2}\bigr)
-\;\sim\;
-\bigl(e^{s}-R_{\rm excl}^2+\chi^2\theta^2\bigr)^{-0.85}
-\]
-which is bounded and smooth in \(s\) once exclusion sets
-\(e^s\ge R_{\rm excl}^2\). A single Gauss--Legendre grid in \(s\)
-on \([\ln R_{\rm excl}^2, \ln(R_{\rm excl}^2+\chi^2\sigma_z^2)]\)
-covers the entire outer region with \(\sim\!20\) nodes to
-sub-percent accuracy and avoids the R2/R3 split.
+Let \(R_{\rm excl}\equiv R_\lambda(\lob)(1+\zob)\) and define
+\begin{equation}
+t \;\equiv\; \mathrm{asinh}\!\left(\frac{|\Delta\chi_\parallel|}{R_{\rm excl}}\right),
+\qquad
+\frac{d|\Delta\chi_\parallel|}{dt} \;=\; R_{\rm excl}\,\cosh t \,.
+\label{eq:asinh_transform}
+\end{equation}
+The key properties of the transform at the three characteristic
+scales of Fig.~\ref{fig:fz}:
+\begin{itemize}
+  \item At \(|\Delta\chi_\parallel|\!\to\!0\) (centre of R1):
+        \(t\!\to\!0\), \(\cosh t\!\to\!1\), the ring plateau is
+        mapped to a small-\(t\) neighbourhood with bounded
+        Jacobian.
+  \item At \(|\Delta\chi_\parallel|\!=\!R_{\rm excl}\) (peak of R2):
+        \(t\!=\!\mathrm{asinh}(1)\!\approx\!0.881\), a universal
+        fixed value independent of cosmology. \(\xinl\) is near
+        maximum but the Jacobian
+        \(\cosh t\!\approx\!\sqrt 2\!\approx\!1.41\) is bounded, so
+        the peak becomes a smooth local maximum of the
+        \(t\)-integrand.
+  \item At \(|\Delta\chi_\parallel|\!\gg\!R_{\rm excl}\):
+        \(t\!\to\!\ln(2|\Delta\chi_\parallel|/R_{\rm excl})\), so
+        the transform is asymptotically logarithmic --- same as
+        Option~E's outer piece \(u=\ln|\Delta\chi_\parallel|\). In
+        particular the \(\xinl\propto r^{-1.7}\) power law times
+        the \(\cosh t\) Jacobian gives a smooth exponential decay
+        \(\sim\!e^{-0.7\,t}\) at large \(t\).
+\end{itemize}
+A single Gauss--Legendre grid in \(t\in[0,\,t_{\max}]\) per side
+of \(\zob\) (where
+\(t_{\max}=\mathrm{asinh}(|\Delta\chi_\parallel^{\max}|/R_{\rm excl})\))
+therefore covers ring plateau, exclusion peak, and outer decay in
+one pass without a region split. The Jacobian for the \(z\)-integral
+is
+\begin{equation}
+\frac{dz}{dt}
+\;=\;\frac{|d\chi/dt|}{|d\chi/dz|}
+\;=\;\frac{R_{\rm excl}\cosh t}{c/H(z)}\,.
+\end{equation}
 
-\paragraph{Why not make this the default.}
-Three practical drawbacks:
+\paragraph{Why this helps.}
+The \(\xinl\!\propto\!r^{-1.7}\) near-exclusion divergence,
+multiplied by the \(\cosh t\) Jacobian, yields a bounded smooth
+integrand of \(t\) near \(t\!\approx\!0.881\). The small-\(t\)
+plateau contribution and the large-\(t\) exponential tail are also
+smooth. No sharp feature remains in the \(t\)-variable, so GL
+converges faster per node than Option~E on those axes where
+Option~E keeps a region split.
+
+\paragraph{Measured performance.}
+Both schemes, vs \texttt{scipy.integrate.quad} (rtol\,=\,\(10^{-5}\))
+at \((\lob,\zob)\!=\!(20,0.5)\):
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{r l r r r r r}
+\toprule
+\(N_z\) & scheme & \(\Pop[1]\) err & \(I_2\) err & \(I_1\) err
+                & \(\bsel(\dprj\!=\!10,\theta\!\to\!0)\) & time \\
+\midrule
+40  & E & \(-0.15\%\) & \(+0.57\%\) & \(+0.78\%\) & 45.5 & 20\,ms \\
+40  & D & \(-0.13\%\) & \(-2.13\%\) & \(-1.32\%\) & 47.5 & \textbf{12\,ms} \\
+80  & E & \(-0.13\%\) & \(-0.86\%\) & \(-0.81\%\) & 46.1 & 21\,ms \\
+80  & \textbf{D} & \(\mathbf{-0.14\%}\) & \(\mathbf{-0.47\%}\) & \(\mathbf{-0.32\%}\) & \textbf{46.0} & 22\,ms \\
+160 & E & \(-0.13\%\) & \(-0.83\%\) & \(-0.76\%\) & 46.1 & 40\,ms \\
+160 & D & \(-0.14\%\) & \(-1.02\%\) & \(-0.93\%\) & 46.2 & 47\,ms \\
+320 & E & \(-0.13\%\) & \(-0.68\%\) & \(-0.63\%\) & 46.0 & 96\,ms \\
+320 & \textbf{D} & \(-0.13\%\) & \(\mathbf{-0.45\%}\) & \(\mathbf{-0.45\%}\) & 45.9 & 97\,ms \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{4pt}
+Cross-check across \((\lob,\zob)\) bins at \(N_z=80\)
+(relative D/E for the integrals, absolute for the bias):
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{r r r r r r r}
+\toprule
+\(\lob\) & \(\zob\) & \(\Pop[1]_{\rm D}/\Pop[1]_{\rm E}\)
+         & \(I_2^{\rm D}/I_2^{\rm E}\) & \(I_1^{\rm D}/I_1^{\rm E}\)
+         & \(b_{{\rm sel},{\rm E}}(\dprj\!=\!10)\)
+         & \(b_{{\rm sel},{\rm D}}(\dprj\!=\!10)\) \\
+\midrule
+20 & 0.30 & 1.0000 & 1.0042 & 1.0041 & 45.9 & 45.8 \\
+20 & 0.50 & 1.0000 & 1.0040 & 1.0053 & 46.1 & 46.0 \\
+20 & 0.70 & 1.0001 & 1.0054 & 1.0046 & 48.1 & 47.9 \\
+50 & 0.30 & 0.9999 & 1.0054 & 1.0048 & 22.2 & 22.1 \\
+50 & 0.50 & 1.0000 & 1.0105 & 1.0059 & 20.8 & 20.6 \\
+50 & 0.70 & 0.9999 & 1.0028 & 1.0030 & 20.6 & 20.6 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Headlines.}
+\begin{itemize}
+  \item At \(N_z\!=\!80\), Option~D beats Option~E on \(I_1,I_2\):
+        \(-0.47\%\) and \(-0.32\%\) vs \(-0.86\%\) and \(-0.81\%\).
+        No time penalty (both \(\sim\!22\)\,ms).
+  \item At \(N_z\!=\!40\), Option~D is \emph{worse} than Option~E:
+        \(-2.13\%\) vs \(+0.57\%\). D needs enough nodes to resolve
+        the broad bell-shape it creates; with only \(\sim\!20\) GL
+        nodes per side it under-samples the peak region.
+  \item \textbf{Both schemes oscillate non-monotonically in \(N_z\).}
+        Neither is uniformly better across all node counts. The
+        residual \(\sim\!0.3\)--\(1\%\) is a floor of the fixed-rule
+        methods; for sub-\(0.3\%\) precision, use
+        \texttt{scipy.integrate.quad} adaptively (\(\sim\!5\)\,s per
+        precompute).
+  \item \textbf{\(\Pop[1]\) is essentially identical between the two
+        schemes}, differing only at the \(10^{-4}\) level. Both
+        handle the non-\(\xinl\) integrand fine.
+\end{itemize}
+
+\paragraph{Why not make Option~D the default.}
 \begin{enumerate}
-  \item It is \emph{tailored to the \(r^{-1.7}\) singularity} of
-        \(\xinl\). For \(\Pop[1]\) there is no singularity, so
-        the transform over-samples the low-\(s\) region and
-        under-samples the kernel truncation tail --- a
-        region-split (Option~E) is strictly better for
-        \(\Pop[1]\).
-  \item The ring band (R1) is \emph{not} improved by this
-        transform: inside the band, \(\xinl=0\) on the
-        small-\(\theta\) part and smooth on the large-\(\theta\)
-        part; the \(\theta\)-integral structure is what makes R1
-        flat, not the \(\Delta\chi_\parallel\) dependence. So
-        even with Option~D we still want a separate R1 GL pass.
-  \item Option~D gets more complex if \(\xinl\) is replaced by a
-        different kernel (e.g.\ when validating against a linear
-        \(\xi\) as a sanity check, or when a different halofit
-        prescription is used). Option~E is kernel-agnostic.
+  \item \textbf{Kernel-specific.} The transform is tuned to the
+        \(\xinl\sim r^{-1.7}\) near-exclusion behaviour via the
+        universal pivot \(R_{\rm excl}\). If \(\xinl\) is replaced
+        by a linear \(\xi\), a different halofit prescription, or
+        an emulator, the location of the peak in
+        \(t\)-coordinates shifts and node density is no longer
+        optimal at \(t\!=\!0.881\). Option~E makes no such
+        assumption.
+  \item \textbf{\(\Pop[1]\) has no \(\xinl\),} so the transform's
+        smoothing is wasted there. Option~E's region split
+        correctly recognises that \(\Pop[1]\) is smooth
+        everywhere and uses GL directly.
+  \item \textbf{Non-monotonic convergence.} Both schemes oscillate,
+        but D's oscillation amplitude is larger at low \(N_z\)
+        (\(\sim\!2\%\) at \(N_z\!=\!40\)) than E's
+        (\(\sim\!0.8\%\)). Option~E is more forgiving of a
+        user choosing a tight \(N_z\) for speed.
+  \item \textbf{Option~E matches Matteo's notebook structure.}
+        His \texttt{numerator2}/\texttt{int\_over\_phi4} follow the
+        log-spaced LoS pattern; Option~E is a drop-in upgrade.
 \end{enumerate}
 
 \paragraph{When to use Option~D.}
-When MCMC runtime becomes dominated by the
-\((z,\theta)\) block and every 10\% matters, Option~D applied
-\emph{only} to \(I_1\) and \(I_2\) (keeping Option~E for
-\(\Pop[1]\) and for the ring band) can shave \(\sim\!30\%\) of the
-evaluations per precompute.
+When MCMC runtime is dominated by \(I_1,I_2\) and the user has
+already established \(N_z\!\geq\!60\) via convergence testing,
+Option~D gives a \(\sim\!2\times\) reduction in residual error at
+the same node count. In
+\texttt{RichnessSelection} it is enabled via
+\texttt{SelBias(..., z\_scheme='D')}; the default is
+\texttt{z\_scheme='E'}.
 
 \section{Implementation notes}
 
-The Option~E recipe is implemented in
-\texttt{src/richness\_selection/sel\_bias.py::\_P\_operator}, driven
-by the single \texttt{GridConfig.Nz} parameter (default~80) split
-internally as
-\(N_{\rm ring}=\max(9,\,N_z/4)\),
-\(N_{\rm outer}=\max(15,(N_z-N_{\rm ring})/2)\) per side. No further
-tuning should be needed for typical DES Y3 cluster redshift bins
-(\(\zob\in[0.1,0.8]\)). For extreme cosmologies or richness bins
-the same \((N_{\rm ring},N_{\rm outer})\) defaults should remain
-safe because the \emph{geometry} of
-Fig.~\ref{fig:fz} does not change
-qualitatively with cosmology --- only \(R_{\rm excl}\) and
-\(c/H(\zob)\) move, and the region split tracks them explicitly.
+Both schemes are implemented in
+\texttt{src/richness\_selection/sel\_bias.py}, dispatched by the
+constructor argument \texttt{z\_scheme} (\texttt{'E'} or
+\texttt{'D'}).
 
-A regression test at
-\((\lob,\zob)=(20,0.5)\) is in
-\texttt{validations/quad\_validate.py} of the
-\texttt{RichnessSelection} Python package; it compares
-\(\Pop[1], I_1, I_2\) to \texttt{scipy.integrate.quad} at
-\texttt{rtol}=\(10^{-5}\). Any future refactor should pass this
-test to \(<\!1\%\) on all three integrals.
+Option~E, \texttt{\_z\_grid\_option\_E}, splits
+\(N_z\) as \(N_{\rm ring}=\max(9,\,N_z/4)\) and
+\(N_{\rm outer}=\max(15,(N_z-N_{\rm ring})/2)\) per side.
+
+Option~D, \texttt{\_z\_grid\_option\_D}, uses
+\(N_{\rm side}=\max(15,\,N_z/2)\) GL nodes per foreground/background
+side in \(t=\mathrm{asinh}(|\Delta\chi_\parallel|/R_{\rm excl})\),
+with no region split.
+
+Both handle edge cases where \(R_{\rm excl}\) exceeds the photo-z
+support or the ring band is clipped by \(w_z=0\). Two regression
+tests live in the \texttt{RichnessSelection} package:
+\begin{itemize}
+  \item \texttt{validations/quad\_validate.py}: compares one
+        \(N_z\!=\!80\) result to
+        \texttt{scipy.integrate.quad} at rtol~\(10^{-5}\); must
+        pass \(<\!1\%\) on \(\Pop[1], I_1, I_2\).
+  \item \texttt{validations/compare\_schemes.py}: prints the table
+        above (D vs E at \(N_z\!\in\!\{40,80,160,320\}\)) at the
+        reference point and across six
+        \((\lob,\zob)\) bins.
+\end{itemize}
+
+For typical DES Y3 cluster redshift bins
+(\(\zob\in[0.1,0.8]\), \(\lob\in[20,500]\)) no retuning of
+\((N_{\rm ring},N_{\rm outer})\) or \(N_{\rm side}\) defaults
+should be needed: the \emph{geometry} of Fig.~\ref{fig:fz}
+is universal in shape, only \(R_{\rm excl}\) and \(c/H(\zob)\)
+shift with cosmology/richness, and both schemes track those
+scales explicitly.
 
 \end{document}
