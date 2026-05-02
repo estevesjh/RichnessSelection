@@ -31,6 +31,7 @@ theta-integrated version and would double-count the theta integral).
 """
 from __future__ import annotations
 import numpy as np
+from scipy.optimize import bisect
 
 from .cosmology import Cosmology
 from .pk import PkGrid
@@ -38,7 +39,7 @@ from .hmf import HMF
 from .bias import Bias
 from .mor import MOR
 from .geometry import R_lambda, theta_lambda, area_overlap
-from .photoz import w_z, sigma_z
+from .photoz import w_z, sigma_z, zmin4zkernel, zmax4zkernel
 from .gl import gl_nodes
 from .config import DEFAULT_GRID, GridConfig
 
@@ -126,14 +127,53 @@ class SelBias:
         g = self.grid
         theta_lob = self._theta_lob(lob, zob)
 
-        # z-grid within photo-z kernel support
-        sig = float(sigma_z(zob))
-        zlo, zhi = max(0.01, zob - sig), zob + sig
-        zs, wzs = gl_nodes(zlo, zhi, g.Nz)                    # (Nz,)
-        chi_z = self.cosmo.chi(zs)                             # (Nz,)
+        # LoS-distance grid (Matteo-style: log-spaced in |Delta chi|,
+        # dense near z_ob where xi_NL spikes).
+        # Foreground + background each log-spaced in Delta chi.
         chi_o = float(self.cosmo.chi(zob))
-        dV = self.cosmo.dV_dzdOm(zs)                           # (Nz,)
-        wz_kern = w_z(zs, zob)                                 # (Nz,)
+
+        # Support bounds from the photo-z kernel bisect helpers
+        try:
+            z_fg_lo = float(bisect(zmin4zkernel, -2.0, 2.0, args=(zob,)))
+            z_bg_hi = float(bisect(zmax4zkernel, -2.0, 2.0, args=(zob,)))
+        except ValueError:
+            # bisect can fail at very small zob; fall back to a symmetric band
+            sig = float(sigma_z(zob))
+            z_fg_lo, z_bg_hi = max(0.01, zob - sig), zob + sig
+
+        chi_fg_lo = float(self.cosmo.chi(z_fg_lo))
+        chi_bg_hi = float(self.cosmo.chi(z_bg_hi))
+
+        n_fg = max(4, g.Nz // 2)
+        n_bg = g.Nz - n_fg
+
+        # Log-spaced LoS distances from epsilon up to the edge of support
+        dis_fg_max = chi_o - chi_fg_lo
+        dis_bg_max = chi_bg_hi - chi_o
+        dis_min_fg = max(1e-3, 1e-4 * dis_fg_max)
+        dis_min_bg = max(1e-3, 1e-4 * dis_bg_max)
+        dis_fg = np.geomspace(dis_min_fg, dis_fg_max, n_fg)
+        dis_bg = np.geomspace(dis_min_bg, dis_bg_max, n_bg)
+
+        # Convert LoS distances to redshifts (foreground < zob, background > zob)
+        chi_fg = chi_o - dis_fg[::-1]           # ascending in z
+        chi_bg = chi_o + dis_bg
+        chi_zs = np.concatenate([chi_fg, chi_bg])
+        # Invert cosmo.chi to get z
+        zs_ref = np.linspace(0.0, 2.0, 2000)
+        chi_ref = self.cosmo.chi(zs_ref)
+        zs = np.interp(chi_zs, chi_ref, zs_ref)      # (Nz,)
+
+        chi_z = self.cosmo.chi(zs)                    # (Nz,)
+        dV = self.cosmo.dV_dzdOm(zs)                  # (Nz,)
+        wz_kern = w_z(zs, zob)                        # (Nz,)
+        # Trapezoidal weights in z (we integrate in z, not LoS distance, since
+        # dV_dzdOm is already per-dz).
+        dz = np.diff(zs)
+        wzs = np.zeros_like(zs)
+        wzs[0]  = 0.5 * dz[0]
+        wzs[-1] = 0.5 * dz[-1]
+        wzs[1:-1] = 0.5 * (dz[:-1] + dz[1:])
 
         # M-grid
         log10_Mmin = np.log10(self.min_mass4integral)
