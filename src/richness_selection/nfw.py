@@ -1,0 +1,58 @@
+"""Miscentered NFW surface density via precomputed "single" lookup table.
+
+Tables (loaded once at construction):
+    table_1000_1e-03_5e+03_single_logx.txt      999 pts   ln(R/R_s)
+    table_1000_1e-03_5e+03_single_logxmis.txt   249 pts   ln(R_mis/R_s)
+    table_1000_1e-03_5e+03_log_sigma_single.txt 250 x 1000  ln f(x, x_mis)
+    f = (1/(2 pi R_s rho_s)) * (1/(2 pi)) int d phi Sigma_NFW(R_h)
+    Sigma_mis(R, M, z, R_mis) = 2 pi R_s rho_s * exp(ln f)
+"""
+from __future__ import annotations
+import os
+import numpy as np
+from scipy.interpolate import RectBivariateSpline
+
+from .cosmology import Cosmology
+from .config import NFW_TABLE_DIR
+
+
+class NFWMiscentered:
+    """Miscentered NFW Sigma(R | M, z, R_mis) from the Y3 lookup table.
+
+    Concentration is Duffy 2008-style fixed c = 5 for v0.1; swap to a
+    c(M, z) model later if needed.
+    """
+
+    def __init__(self, cosmo: Cosmology, table_dir=NFW_TABLE_DIR, c=5.0):
+        self.cosmo = cosmo
+        self.c = c
+        self._log_x = np.loadtxt(os.path.join(
+            table_dir, "table_1000_1e-03_5e+03_single_logx.txt"))
+        self._log_xmis = np.loadtxt(os.path.join(
+            table_dir, "table_1000_1e-03_5e+03_single_logxmis.txt"))
+        log_sigma = np.loadtxt(os.path.join(
+            table_dir, "table_1000_1e-03_5e+03_log_sigma_single.txt"))
+
+        lnxmis = self._log_xmis[: log_sigma.shape[0]]
+        lnx = self._log_x[: log_sigma.shape[1]]
+        self._lnx_lo, self._lnx_hi = lnx[0], lnx[-1]
+        self._lnxmis_lo, self._lnxmis_hi = lnxmis[0], lnxmis[-1]
+        self._spl = RectBivariateSpline(lnxmis, lnx, log_sigma, kx=1, ky=1)
+
+    def _rs_and_rhos(self, M, z):
+        """R_s [cMpc/h], rho_s [Msun/h / (cMpc/h)^3]."""
+        rho_m = self.cosmo.Om0 * 2.77533742639e11
+        r200m = (3.0 * M / (4.0 * np.pi * 200.0 * rho_m)) ** (1.0 / 3.0)
+        rs = r200m / self.c
+        fc = np.log(1.0 + self.c) - self.c / (1.0 + self.c)
+        rho_s = rho_m * (200.0 / 3.0) * self.c ** 3 / fc
+        return rs, rho_s
+
+    def sigma_grid(self, R_arr, R_mis_arr, M, z):
+        """Vectorised Sigma_mis over (R_mis, R): returns (N_Rmis, N_R)."""
+        rs, rho_s = self._rs_and_rhos(M, z)
+        lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
+        lnxmis = np.clip(np.log(R_mis_arr / rs),
+                         self._lnxmis_lo, self._lnxmis_hi)
+        lnF = self._spl(lnxmis, lnx)
+        return (2.0 * np.pi * rs * rho_s) * np.exp(lnF)
