@@ -144,84 +144,93 @@ class SelBias:
         chi_fg_lo = float(self.cosmo.chi(z_fg_lo))
         chi_bg_hi = float(self.cosmo.chi(z_bg_hi))
 
-        # Fixed node count per half (default GridConfig.Nz = 80 -> 40 fg + 40 bg).
-        # Log-spacing in |Delta chi| automatically gives ~0.005 effective dz
-        # at the outer edge and much finer resolution near the inner edge.
-        # Simpson requires an odd number of points per half.
-        half = max(5, g.Nz // 2)
-        if half % 2 == 0:
-            half += 1
-        n_fg = n_bg = half
-
-        # Important subtlety: the halo-exclusion mask is on the 3-D
-        # separation Delta_chi(z, theta), NOT on the LoS component
-        # |Delta_chi_||(z)| alone.  So inside the "exclusion z-band"
-        # (|z - zob| < R_excl / (c/H(zob))) the integrand f(z) is
-        # non-zero because part of the theta range (theta > R_excl/chi)
-        # escapes exclusion and contributes a "ring" term.  Do NOT pin
-        # the LoS grid at R_excl -- go all the way to epsilon so the
-        # inner ring band gets integrated.
+        # Option E: split by physics into three regions.
+        #
+        # The z-integrand f(z) has a non-trivial structure with three
+        # characteristic scales:
+        #
+        #   1. "Ring plateau"  (|z - zob| < dz_excl = R_excl / (c/H(zob)))
+        #       Inside the exclusion z-band, the small-theta part of the
+        #       integrand is killed by exclusion, but theta > R_excl/chi
+        #       still contributes.  f(z) is SMOOTH here, roughly a
+        #       symmetric plateau.  Gauss-Legendre on uniform z suffices.
+        #
+        #   2. "Exclusion peak"  (|Delta_chi_parallel| just outside R_excl)
+        #       xi_NL(Delta_chi) ~ Delta_chi^(-1.7) is maximal at
+        #       Delta_chi = R_excl, making f(z) peak there.  Log-spacing
+        #       in (|Delta_chi_parallel| - R_excl) or Gauss-Legendre on
+        #       u = ln|Delta_chi_parallel| resolves the peak and the
+        #       power-law decay smoothly.
+        #
+        #   3. "Outer power-law decay"  (Delta_chi_parallel >> R_excl)
+        #       smooth falling tail, captured by the same log-spaced
+        #       Gauss-Legendre as region 2.
+        #
+        # Integral splits as:
+        #   I = I_ring + I_outer_fg + I_outer_bg
         R_excl = R_lambda(lob) * (1.0 + zob)
 
-        dis_fg_max = chi_o - chi_fg_lo
-        dis_bg_max = chi_bg_hi - chi_o
-        dis_min_fg = max(1e-3, 1e-4 * dis_fg_max)
-        dis_min_bg = max(1e-3, 1e-4 * dis_bg_max)
-
-        u_fg = np.linspace(np.log(dis_min_fg), np.log(dis_fg_max), n_fg)
-        u_bg = np.linspace(np.log(dis_min_bg), np.log(dis_bg_max), n_bg)
-        dis_fg = np.exp(u_fg)
-        dis_bg = np.exp(u_bg)
-
-        # Convert LoS distances to redshifts (foreground < zob, background > zob)
-        chi_fg = chi_o - dis_fg[::-1]           # ascending in z
-        chi_bg = chi_o + dis_bg
-        chi_zs = np.concatenate([chi_fg, chi_bg])
+        # dchi/dz at zob for converting R_excl -> dz_excl
         zs_ref = np.linspace(0.0, 2.0, 2000)
         chi_ref = self.cosmo.chi(zs_ref)
-        zs = np.interp(chi_zs, chi_ref, zs_ref)      # (Nz,)
+        dchi_dz_ref = np.gradient(chi_ref, zs_ref)
+        dchi_dz_at_zob = float(np.interp(zob, zs_ref, dchi_dz_ref))
+        dz_excl = R_excl / dchi_dz_at_zob
 
-        chi_z = self.cosmo.chi(zs)                    # (Nz,)
-        dV = self.cosmo.dV_dzdOm(zs)                  # (Nz,)
-        wz_kern = w_z(zs, zob)                        # (Nz,)
+        # ---- Region 1: inner ring plateau, uniform z GL ----
+        n_ring = max(9, g.Nz // 4)            # typical 15-20 nodes
+        z_ring_lo = max(zob - dz_excl, z_fg_lo)
+        z_ring_hi = min(zob + dz_excl, z_bg_hi)
+        z_ring, w_ring = gl_nodes(z_ring_lo, z_ring_hi, n_ring)
 
-        # Simpson weights in u = ln|Delta chi| on each half, with Jacobian
-        # to convert the integral to z:
-        #   int dz f(z) = int du [dz/du] f(z(u))
-        # with  dz/du = |dz/dchi| * |dchi/du| = (1 / chi'(z)) * |Delta chi|
-        # and chi'(z) = c/H(z) = c * dV^(1/3) ... easier: numerical dz/du.
-        def _simpson_weights_u(u):
-            """Simpson 1/3 weights over a uniform grid of u."""
-            n = u.size
-            if n % 2 == 0:
-                raise ValueError('Simpson needs an odd number of nodes')
-            h = (u[-1] - u[0]) / (n - 1)
-            w = np.ones(n)
-            w[1:-1:2] = 4.0  # odd interior
-            w[2:-1:2] = 2.0  # even interior (not including first or last)
-            return w * h / 3.0
+        # ---- Regions 2+3: outer foreground and background
+        # GL on u = ln(|Delta chi_parallel|), from ln(R_excl) to ln(dis_max)
+        n_outer = max(15, (g.Nz - n_ring) // 2)  # typical 30-35 nodes per side
+        dis_fg_max = chi_o - chi_fg_lo
+        dis_bg_max = chi_bg_hi - chi_o
 
-        w_u_fg = _simpson_weights_u(u_fg)      # (n_fg,)
-        w_u_bg = _simpson_weights_u(u_bg)      # (n_bg,)
+        # If R_excl exceeds dis_fg_max or dis_bg_max (very tight photo-z
+        # kernel), clamp; the outer region may vanish.
+        if R_excl < dis_fg_max:
+            u_fg_nodes, w_u_fg = gl_nodes(np.log(R_excl), np.log(dis_fg_max),
+                                          n_outer)
+            dis_fg_nodes = np.exp(u_fg_nodes)
+            # dz/du = |dchi/du| / (dchi/dz) = dchi_nodes / dchi_dz
+            chi_fg_nodes = chi_o - dis_fg_nodes
+            z_fg_nodes = np.interp(chi_fg_nodes, chi_ref, zs_ref)
+            dchi_dz_fg = np.interp(z_fg_nodes, zs_ref, dchi_dz_ref)
+            # Note: for foreground, z < zob, so dz = -dchi/(dchi/dz).
+            # But we integrate |f(z)| forward in z (GL weights are positive).
+            # The sign handling is: int_{z_lo}^{zob} f dz = int_{0}^{dis_max} f * dz/ddis ddis
+            # with dz/ddis = -1/(dchi/dz) for fg, but we absorb the sign into
+            # a reversal of order.  Simplest: compute as positive using
+            # w_z_fg = w_u_fg * dis_fg_nodes / dchi_dz_fg.
+            w_z_fg = w_u_fg * dis_fg_nodes / dchi_dz_fg
+        else:
+            z_fg_nodes = np.array([])
+            w_z_fg = np.array([])
 
-        # Jacobian dz/du per node: dz/du = |dchi/du| / (dchi/dz)
-        # dchi/du = |Delta chi| = exp(u) for both halves
-        # dchi/dz = c/H(z), computed numerically from the chi(z) table
-        # since cosmo exposes chi but not H directly.
-        # We can get dchi/dz from the chi_ref gradient for accuracy.
-        dchi_dz_ref = np.gradient(chi_ref, zs_ref)     # (2000,)
-        dchi_dz_zs = np.interp(zs, zs_ref, dchi_dz_ref)
+        if R_excl < dis_bg_max:
+            u_bg_nodes, w_u_bg = gl_nodes(np.log(R_excl), np.log(dis_bg_max),
+                                          n_outer)
+            dis_bg_nodes = np.exp(u_bg_nodes)
+            chi_bg_nodes = chi_o + dis_bg_nodes
+            z_bg_nodes = np.interp(chi_bg_nodes, chi_ref, zs_ref)
+            dchi_dz_bg = np.interp(z_bg_nodes, zs_ref, dchi_dz_ref)
+            w_z_bg = w_u_bg * dis_bg_nodes / dchi_dz_bg
+        else:
+            z_bg_nodes = np.array([])
+            w_z_bg = np.array([])
 
-        # |dchi/du| per node: fg is reversed, so u_fg[i] maps to zs[i] where
-        # zs[:n_fg] is foreground ascending (low to zob) and dis_fg reversed.
-        dchi_du_fg = dis_fg[::-1]   # matches zs[:n_fg]
-        dchi_du_bg = dis_bg          # matches zs[n_fg:]
-        dchi_du = np.concatenate([dchi_du_fg, dchi_du_bg])
-        dz_du = dchi_du / dchi_dz_zs
+        # Assemble full z-grid (fg ascending, ring ascending, bg ascending)
+        z_fg_nodes_sorted = z_fg_nodes[::-1] if z_fg_nodes.size else z_fg_nodes
+        w_z_fg_sorted = w_z_fg[::-1] if w_z_fg.size else w_z_fg
+        zs = np.concatenate([z_fg_nodes_sorted, z_ring, z_bg_nodes])
+        wzs = np.concatenate([w_z_fg_sorted, w_ring, w_z_bg])
 
-        # Simpson weight in z = w_u * dz/du, per half (reversing for fg)
-        w_u = np.concatenate([w_u_fg[::-1], w_u_bg])
-        wzs = w_u * dz_du
+        chi_z = self.cosmo.chi(zs)
+        dV = self.cosmo.dV_dzdOm(zs)
+        wz_kern = w_z(zs, zob)
 
         # M-grid
         log10_Mmin = np.log10(self.min_mass4integral)
