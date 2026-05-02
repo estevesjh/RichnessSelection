@@ -305,41 +305,44 @@ class SelBias:
 
     def b_sel_marginalised(self, theta, lob, zob, ltr_grid_size=None,
                            precomp=None, use_plob_ltr: bool = True):
-        """Marginalised bias (paper eq. 10).
+        """Marginalised bias per Eq. (b_marg_lt) of the TeX.
 
-        P(ltr | lob, zob) propto P(lob | ltr, zob) * int dM P(ltr|M,z) n(M,z)
+        P(ltr | lob, zob) propto P(lob | ltr, zob) * prior(ltr, zob),
+        with prior(ltr, zob) = int dM n(M,z) P(ltr | M, z).
 
-        With ``use_plob_ltr=True`` (default), the P(lob|ltr) exponential-tail
-        model from `plob_ltr` is used, which sharply peaks the marginalisation
-        near ltr = lob.  With ``use_plob_ltr=False``, only the HMF-weighted
-        HOD prior P(ltr|M,z)n(M) is used -- a broader distribution that
-        de-emphasises the lob=ltr peak.
+        P(lob | ltr, z) is the full EMG kernel of
+        Eq. (costanzi_kernel):  (1 - f_prj) Gaussian + f_prj * EMG.
+        This is smooth in ltr -- no delta function -- so the
+        marginalisation is a single GL quadrature.
+
+        With ``use_plob_ltr=False`` the P(lob|ltr) factor is dropped
+        and only prior(ltr) weights enter (diagnostic only: wrong
+        physics).
         """
         if ltr_grid_size is None:
             ltr_grid_size = self.grid.ltr_grid_size
         pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
 
-        # ltr grid spans from 1 to the maximum feasible true richness
-        # given the projection tail.  We extend a little past lob so the
-        # delta-like peak near ltr = lob is well-resolved.
-        t_nodes, t_wts = gl_nodes(1.0, float(lob) + 5.0, ltr_grid_size)
+        # EMG kernel has a Gaussian component of width sigma ~ a few, so we
+        # need ltr support that covers [lob - 6 sigma, lob + 6 sigma] plus
+        # the exponential tail (length ~ 1/tau).  Conservative: ltr in [1, 3*lob].
+        t_nodes, t_wts = gl_nodes(1.0, 3.0 * float(lob), ltr_grid_size * 2)
 
-        # Build P(ltr | M, z) n(M, z) weighting, integrated over M
+        # prior(ltr, z) = int dM n(M,z) P(ltr | M, z)
         log10_Mmin = np.log10(self.min_mass4integral)
         m_grid = 10.0 ** np.linspace(log10_Mmin, self.ln_M_max_log10, 50)
         hmf_m = self.hmf(m_grid, zob)
         p_ltr_M = self.mor.pdf(t_nodes[:, None], m_grid[None, :], zob)
-        # int dM P(ltr|M,z) n(M,z) -> proportional to n(ltr)
-        p_ltr_prior = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
-                               np.log(m_grid), axis=1)
+        prior_ltr = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
+                             np.log(m_grid), axis=1)
 
         if use_plob_ltr:
             from .plob_ltr import P_lob_given_ltr
             p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(ltr), zob))
                                   for ltr in t_nodes])
-            p_ltr = p_lob_ltr * p_ltr_prior
+            p_ltr = p_lob_ltr * prior_ltr
         else:
-            p_ltr = p_ltr_prior
+            p_ltr = prior_ltr
 
         theta_arr = np.asarray(theta, dtype=float)
         num = np.zeros_like(theta_arr)
