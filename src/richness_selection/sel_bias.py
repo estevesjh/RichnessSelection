@@ -1,60 +1,62 @@
-"""Projection-effects / selection-bias pipeline (Costanzi 2026).
+"""Optical cluster bias b_lob(theta | lob, ltr, zob) — Costanzi 2026.
 
-Ports Matteo's cell 16 verbatim, with two known-undefined constants
-(`inter_boost_bias`, `slope_boost_bias`) exposed as attributes of the
-class with `inter_boost_bias=1.0`, `slope_boost_bias=0.0` as the
-literal defaults corresponding to ``boost_bias == 1`` (the default value
-in Matteo's `bar_delta_prj_Beff` signature).
+This is a clean implementation of Costanzi et al. 2026 equations 3-9.
+It does NOT follow Matteo's selbias notebook cell 16 (which uses a
+different intrinsic-bias construction that requires two undefined
+constants `inter_boost_bias` / `slope_boost_bias`).  Instead we stick
+to the published paper:
 
-Pipeline (Costanzi 2026, Matteo cell 16):
+  rho_prj(lam, z, theta | lob, zob) = w_z(z, zob) f_A(theta, lam, z, lob, zob) lam
 
-  bar_delta_prj_bkg(ltr, zcl)       -- LoS mass integral of projected richness
-  numerator2(lob, zcl)              -- LoS mass integral of (lob-ltr)-style kernel
-  eff_bias_ltr(ltr, zcl)            -- Tinker-bias weighted by HOD P(ltr|M,z)
-  Delta_prj_lob_ltr(lob, ltr) = lob - ltr
-  boost_bias(lob, ltr, zcl)         -- linear model in (Delta - <Delta>)/<Delta>
-  b_sel_lob_ltr_in(ltr, zcl, lob)   -- intrinsic (theta -> 0) bias
-  b_sel_lob_ltr_theta(theta, ...)   -- sigmoid interpolation in theta
+      P[X]       = int dz (dV/dzdOmega) int dM n(M,z) int d lam P(lam|M,z)
+                   * 2 pi int dtheta sin(theta) rho_prj(lam, z, theta | lob, zob)
+                   * X(M, z, theta | zob)
 
-Pure-halo bias b(M, z) lives in ``bias.py`` -- do not pollute this file
-with it.
+  <Delta_prj_bkg> = P[1]
+  I1             = P[ b(M,z) xi_NL(z,zob,theta) sigmoid(theta) ]
+  I2             = P[ b(M,z) xi_NL(z,zob,theta) ]
+  Delta_prj_RND  = <Delta_prj_bkg> + b_eff(lob,zob) * I2   (eq. 3 with b_lob -> b_eff)
+
+  b_infty        = b_eff(lob,zob) * (1 + 0.13 delta_prj)       (eq. 7)
+  delta_prj      = (lob - ltr)/Delta_prj_RND - 1
+  b_zero         = [(lob - ltr) - <Delta_prj_bkg> - b_infty*I1] / (I2 - I1)  (eq. 8)
+
+  b_lob(theta)   = b_zero + (b_infty - b_zero) / (1 + exp(-k(theta - theta0)))
+                   with  k = 2.5/theta_lob,  theta0 = theta_lob/2      (eq. 6)
+
+The angular f_A is the true theta-dependent aperture-overlap fraction
+(Matteo `area_overlap` in cell 16), NOT the closed-form
+(1 + theta_ltr/theta_lob)^(-2) from cell 14 (which is already the
+theta-integrated version and would double-count the theta integral).
 """
 from __future__ import annotations
 import numpy as np
-from scipy.optimize import bisect
 
 from .cosmology import Cosmology
 from .pk import PkGrid
 from .hmf import HMF
 from .bias import Bias
 from .mor import MOR
-from .geometry import (R_lambda, theta_lambda,
-                       Omega_halos as _Omega_halos,
-                       f_area as _f_area,
-                       area_overlap)
-from .photoz import w_z, sigma_z, zmin4zkernel, zmax4zkernel
+from .geometry import R_lambda, theta_lambda, area_overlap
+from .photoz import w_z, sigma_z
 from .gl import gl_nodes
 from .config import DEFAULT_GRID, GridConfig
 
 
 class SelBias:
-    """Projection-effects / selection-bias orchestrator (Matteo cell 16)."""
+    """Optical cluster bias per Costanzi 2026 eq. 3-9."""
 
-    # Matteo cell 16 globals promoted to class attributes:
-    min_mass4integral: float = 1.0e13
-    damping_sigmoid: float = 2.5
-    n_th_inf: float = 0.0
-    n_th_sup: float = 1.0
+    # Paper constants (eq. 6, section II.A)
+    damping: float = 2.5           # k = damping / theta_lob
+    theta0_frac: float = 0.5       # theta0 = theta0_frac * theta_lob
+    boost_slope: float = 0.13      # eq. 7 coefficient
     exclusion: bool = True
 
     def __init__(self, cosmo: Cosmology, pk: PkGrid, hmf: HMF, bias: Bias,
                  mor: MOR, xi_nl, grid: GridConfig = DEFAULT_GRID,
-                 # Boost-bias parameters (cell 16 references them but does
-                 # not define them).  With the defaults below, boost_bias
-                 # collapses to 1, matching the `boost_bias=1.0` default of
-                 # Matteo's `bar_delta_prj_Beff` signature.
-                 inter_boost_bias: float = 1.0,
-                 slope_boost_bias: float = 0.0):
+                 min_mass4integral: float = 1.0e13,
+                 ln_M_max_log10: float = 15.5,
+                 n_ltr: int = 60):
         self.cosmo = cosmo
         self.pk = pk
         self.hmf = hmf
@@ -62,315 +64,291 @@ class SelBias:
         self.mor = mor
         self.xi_NL = xi_nl
         self.grid = grid
-        self.inter_boost_bias = inter_boost_bias
-        self.slope_boost_bias = slope_boost_bias
-        # Per-sample cache (cleared when a new (cosmo, pk) is wired in --
-        # user responsibility).  Prevents double-integration when the
-        # same precompute is asked for many ltr nodes.
+        self.min_mass4integral = min_mass4integral
+        self.ln_M_max_log10 = ln_M_max_log10
+        self.n_ltr = n_ltr
         self._cache: dict = {}
 
-    # ---------------- simple helpers --------------------------------------
+    # ---------------- small helpers -----------------------------------
 
     def _theta_lob(self, lob, zob):
-        return theta_lambda(lob, zob, self.cosmo)
+        return float(theta_lambda(lob, zob, self.cosmo))
 
-    # ---------------- LoS tracer-redshift grid (Matteo ztr_grid) ----------
+    def _sigmoid_theta(self, theta, lob, zob):
+        theta_lob = self._theta_lob(lob, zob)
+        k = self.damping / theta_lob
+        theta0 = self.theta0_frac * theta_lob
+        return 1.0 / (1.0 + np.exp(-k * (theta - theta0)))
 
-    def _ztr_grid(self, zcl, n_los: int = 50):
-        """Concatenated foreground + background tracer-z grid.
+    # ---------------- b_eff(lob, zob) ---------------------------------
 
-        Reproduces Matteo's bisect-based construction in `int_z_M_dV_n_bias_xi`
-        / `bar_delta_prj_Beff` / `numerator2`.
+    def b_eff(self, lob, zob):
+        """b_eff(lob, zob) = int dM P(M|lob,zob) b(M,zob)  (paper eq. 7 caption).
+
+        Reweights halo bias by the mass distribution given observed
+        richness.  Uses HOD P(ltr=lob | M, z) as a proxy for
+        P(lob|M,z) at first pass (Poisson-Gaussian convolved over noise
+        is the full story; that's Matteo's `plob_Mz`, but for Tinker
+        bias evaluated on M, the main sensitivity is the peak mass
+        which both proxies capture).
         """
-        # Foreground
-        z_min = bisect(zmin4zkernel, -2.0, 2.0, args=(zcl,))
-        z_max = zcl - 1.0e-5
-        chi_z_cl = float(self.cosmo.chi(zcl))
-        dis_max = chi_z_cl - float(self.cosmo.chi(z_min))
-        dis_min = chi_z_cl - float(self.cosmo.chi(z_max))
-        dis = 10.0 ** np.linspace(np.log10(dis_min), np.log10(dis_max), n_los)
-        ztr_fg = self._z_of_chi(chi_z_cl - dis)[::-1]
-        # Background
-        z_max = bisect(zmax4zkernel, -2.0, 2.0, args=(zcl,))
-        z_min = zcl + 1.0e-5
-        dis_min = float(self.cosmo.chi(z_min)) - chi_z_cl
-        dis_max = float(self.cosmo.chi(z_max)) - chi_z_cl
-        dis = 10.0 ** np.linspace(np.log10(dis_min), np.log10(dis_max), n_los)
-        ztr_bg = self._z_of_chi(chi_z_cl + dis)
-        return np.concatenate([ztr_fg, ztr_bg])
-
-    def _z_of_chi(self, chi):
-        """Inverse of cosmo.chi(z) via monotone interpolation on the same grid."""
-        zs, chi_h = self.cosmo._chi_table if hasattr(self.cosmo, "_chi_table") \
-                    else (self.cosmo._z_grid, self.cosmo._chi_grid)
-        return np.interp(chi, chi_h, zs)
-
-    # ---------------- Step: eff_bias_ltr (cell 18) -----------------------
-
-    def eff_bias_ltr(self, ltr, zcl):
-        """<b_halo>_{P(ltr | M, z_cl)} (cell 18)."""
-        key = ("eff_bias_ltr", float(ltr), float(zcl))
+        key = ("b_eff", float(lob), float(zob))
         if key in self._cache:
             return self._cache[key]
-        m_grid = 10.0 ** np.linspace(np.log10(self.min_mass4integral), 15.5, 100)
-        hmf = self.hmf(m_grid, zcl)
-        P = self.mor.pdf(np.array([float(ltr)])[:, None],
-                         m_grid[None, :], zcl).ravel()
-        b_halo = self.bias(m_grid, zcl)
-        norm = np.trapz(hmf * P * m_grid, np.log(m_grid))
-        num = np.trapz(b_halo * hmf * P * m_grid, np.log(m_grid))
-        val = float(num / norm) if norm > 0 else float("nan")
+        log10_Mmin = np.log10(self.min_mass4integral)
+        m_grid = 10.0 ** np.linspace(log10_Mmin, self.ln_M_max_log10, 100)
+        n_m = self.hmf(m_grid, zob)
+        b_m = self.bias(m_grid, zob)
+        P = self.mor.pdf(np.array([float(lob)])[:, None],
+                         m_grid[None, :], zob).ravel()
+        wt = n_m * P * m_grid
+        num = np.trapz(wt * b_m, np.log(m_grid))
+        den = np.trapz(wt, np.log(m_grid))
+        val = float(num / den) if den > 0 else float("nan")
         self._cache[key] = val
         return val
 
-    # ---------------- bar_delta_prj_bkg (cell 16) ------------------------
+    # ---------------- Operator P[X] (eq. 9) ---------------------------
+    #
+    # Returns three scalars: P[1], I1, I2 (eqs 8/9).
+    # This is the central routine and is deliberately *not* cached past
+    # (lob, zob) since repeat calls within a likelihood step are rare.
 
-    def bar_delta_prj_bkg(self, lob, zcl, boost_bias: float = 1.0):
-        """LoS-integrated projected-richness background (cell 16)."""
-        key = ("bar_delta_prj_bkg", float(lob), float(zcl), float(boost_bias))
+    def _P_operator(self, lob, zob):
+        """Compute (P[1], I1, I2) at (lob, zob) per equations 8-9.
+
+        Grids:
+            z     -- photo-z kernel half-width around zob (5 sigma)
+            lnM   -- halo mass
+            lam   -- projected halo true richness (0, lob]
+            theta -- angular separation in (0, 2 theta_lob]
+        """
+        g = self.grid
+        theta_lob = self._theta_lob(lob, zob)
+
+        # z-grid within photo-z kernel support
+        sig = float(sigma_z(zob))
+        zlo, zhi = max(0.01, zob - sig), zob + sig
+        zs, wzs = gl_nodes(zlo, zhi, g.Nz)                    # (Nz,)
+        chi_z = self.cosmo.chi(zs)                             # (Nz,)
+        chi_o = float(self.cosmo.chi(zob))
+        dV = self.cosmo.dV_dzdOm(zs)                           # (Nz,)
+        wz_kern = w_z(zs, zob)                                 # (Nz,)
+
+        # M-grid
+        log10_Mmin = np.log10(self.min_mass4integral)
+        ln_M_min = np.log(10.0 ** log10_Mmin)
+        ln_M_max = np.log(10.0 ** self.ln_M_max_log10)
+        lnMs, wM = gl_nodes(ln_M_min, ln_M_max, g.NM)          # (NM,)
+        Ms = np.exp(lnMs)
+
+        # lambda (true richness) grid: eq. 3 runs lam over (0, lob]
+        lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)  # (Nlam,)
+
+        # theta grid: (0, 2 theta_lob], where projected halos contribute
+        theta_max = 2.0 * theta_lob
+        ths, wth = gl_nodes(1e-6, theta_max, g.Nth)             # (Nth,)
+        sin_th = np.sin(ths)                                    # (Nth,)
+        sigmoid_th = self._sigmoid_theta(ths, lob, zob)         # (Nth,)
+
+        # 3-D separation (Nz, Nth)
+        cos_th = np.cos(ths)
+        dchi2 = (chi_z[:, None] ** 2 + chi_o ** 2
+                 - 2.0 * chi_z[:, None] * chi_o * cos_th[None, :])
+        dchi = np.sqrt(np.maximum(dchi2, 0.0))
+        xi_zth = self.xi_NL(dchi.ravel(), zob).reshape(dchi.shape)
+        if self.exclusion:
+            # Matteo's exclusion radius: R_lambda(lob) * (1 + zcl)
+            R_excl = R_lambda(lob) * (1.0 + zob)
+            xi_zth = np.where(dchi < R_excl, 0.0, xi_zth)
+
+        # b(M, z) on (NM, Nz)
+        bM_mz = self.bias(Ms[:, None], zs[None, :])            # (NM, Nz)
+        # HMF n(M, z) on (NM, Nz)
+        n_mz = self.hmf(Ms[:, None], zs[None, :])              # (NM, Nz)
+        # P(lam | M, z) on (Nlam, NM, Nz)
+        p_lmz = self.mor.pdf(lam_grid[:, None, None],
+                             Ms[None, :, None],
+                             zs[None, None, :])                # (Nlam, NM, Nz)
+
+        # f_A(theta, lam, z, lob, zob): (Nth, Nlam, Nz)
+        #   theta_lam(lam, z) = R_lambda(lam) (1+z) / chi(z)
+        theta_lam_lz = (R_lambda(lam_grid)[:, None]
+                        * (1.0 + zs[None, :]) / chi_z[None, :])  # (Nlam, Nz)
+        # area_overlap: for each (lam, z), compute over ths
+        # reshape theta_lam to 1-D of length Nlam*Nz and broadcast
+        Nth = ths.size; Nlam = lam_grid.size; Nz = zs.size
+        fA = np.empty((Nth, Nlam, Nz))
+        for iz in range(Nz):
+            fA[:, :, iz] = area_overlap(ths, theta_lob, theta_lam_lz[:, iz])
+
+        # Angular weight (theta integral only, eq. 9 requires 2 pi sin theta)
+        # theta-integrand (shared for all operators):
+        th_weight = wth * 2.0 * np.pi * sin_th                 # (Nth,)
+        # For P[1] we need:
+        #   2 pi int dtheta sin(theta) f_A(theta, lam, z, lob, zob)
+        # -> shape (Nlam, Nz)
+        angular_P1 = np.einsum('t,tLz->Lz', th_weight, fA)     # (Nlam, Nz)
+
+        # rho_prj(lam, z | lob, zob)  (pre-integrated over theta, shape (Nlam, Nz))
+        rho_prj_P1 = wz_kern[None, :] * angular_P1 * lam_grid[:, None]
+
+        # P[1] integrand:  dV * int d(lnM) M n(M,z) * int d lam P(lam|M,z) * rho_prj
+        # We integrate in d(lnM) so the HMF gets multiplied by M.
+        lam_integrand_P1 = np.einsum('L,LMz,Lz->Mz',
+                                     wlam, p_lmz, rho_prj_P1)   # (NM, Nz)
+        # wM are d(lnM) weights -- multiply by M explicitly:
+        M_weight = wM * Ms                                       # (NM,)
+        M_integrand_P1 = np.einsum('M,MZ,MZ->Z',
+                                   M_weight, n_mz, lam_integrand_P1)  # (Nz,)
+        P1 = float(np.sum(wzs * dV * M_integrand_P1))
+
+        # For I1, I2 we need the integrand with b(M,z) and xi_NL(z, theta)
+        # included.  Theta does NOT factorize from (M, z) for these, so we
+        # need the full (Nth, NM, Nz) contraction:
+        #   2 pi int dtheta sin(theta) f_A(theta,lam,z) b(M,z) xi(z,theta) [sigmoid]
+        #
+        # Since b(M,z) and xi(z,theta) don't depend on lam, it's cleanest to
+        # split the lam integral into an angular-only factor:
+        #   angular_I(theta, lam, z) = f_A(theta, lam, z)
+        # and then integrate over theta after multiplying by xi, sigmoid.
+        # (Nth, Nlam, Nz) f_A, (Nz, Nth) xi_zth.
+
+        # integrand for I2: 2 pi sin(theta) f_A xi(z,theta)   -> (Nth, Nlam, Nz)
+        xi_tz = xi_zth.T                                       # (Nth, Nz)
+        # Integrate theta: contract Nth with weight (2 pi sin th) and sum
+        #   ang_I2(lam, z) = sum_t wth * 2pi sin th * fA(t,L,z) * xi(t,z)
+        ang_I2 = np.einsum('t,tLz,tz->Lz', th_weight, fA, xi_tz)  # (Nlam, Nz)
+        # ang_I1 = same but weighted by sigmoid
+        ang_I1 = np.einsum('t,t,tLz,tz->Lz',
+                           th_weight, sigmoid_th, fA, xi_tz)   # (Nlam, Nz)
+
+        # rho_prj-style prefactor: w_z * lam
+        rho_prefac = wz_kern[None, :] * lam_grid[:, None]      # (Nlam, Nz)
+        # Integrate lam * P(lam|M,z): (Nlam, Nz) -> (M, z) after weighting
+        # Full integrand for I2:
+        #   (Nlam, NM, Nz): wlam * p_lmz * (rho_prefac * ang_I2 * b)   -- b is (NM, Nz)
+        # Factor out M-independent rho_prefac * ang:
+        lam_I2 = rho_prefac * ang_I2                           # (Nlam, Nz)
+        lam_I1 = rho_prefac * ang_I1                           # (Nlam, Nz)
+
+        lam_int_I2 = np.einsum('L,LMz,Lz->Mz', wlam, p_lmz, lam_I2)  # (NM, Nz)
+        lam_int_I1 = np.einsum('L,LMz,Lz->Mz', wlam, p_lmz, lam_I1)  # (NM, Nz)
+
+        # Multiply by M b(M,z) n(M,z), integrate d(lnM) then d z
+        M_I2 = np.einsum('M,MZ,MZ,MZ->Z',
+                         M_weight, n_mz, bM_mz, lam_int_I2)    # (Nz,)
+        M_I1 = np.einsum('M,MZ,MZ,MZ->Z',
+                         M_weight, n_mz, bM_mz, lam_int_I1)    # (Nz,)
+        I2 = float(np.sum(wzs * dV * M_I2))
+        I1 = float(np.sum(wzs * dV * M_I1))
+
+        return P1, I1, I2
+
+    # ---------------- precompute / per-ltr assembly -------------------
+
+    def bias_precompute(self, lob, zob):
+        """Compute (P1, I1, I2, b_eff, Delta_prj_RND) at (lob, zob) once."""
+        key = ("pre", float(lob), float(zob))
         if key in self._cache:
             return self._cache[key]
-        ztr_grid = self._ztr_grid(zcl)
-        bias_cl = self.eff_bias_ltr(lob, zcl) * boost_bias
-        intoverM = np.array([self._int_over_mass2(zcl, lob, ztr_grid[i], bias_cl)
-                             for i in range(ztr_grid.size)])
-        yarray = (self.cosmo.dV_dzdOm(ztr_grid)
-                  * w_z(ztr_grid, zcl)
-                  * intoverM)
-        integral = float(np.trapz(yarray, ztr_grid, axis=0))
-        self._cache[key] = integral
-        return integral
+        P1, I1, I2 = self._P_operator(lob, zob)
+        beff = self.b_eff(lob, zob)
+        Delta_RND = P1 + beff * I2
+        pre = dict(lob=lob, zob=zob,
+                   P1=P1, I1=I1, I2=I2,
+                   b_eff=beff, Delta_RND=Delta_RND,
+                   denom=I2 - I1)
+        self._cache[key] = pre
+        return pre
 
-    def _int_over_mass2(self, zcl, lob, ztr, bias_cl):
-        m_grid = 10.0 ** np.linspace(np.log10(self.min_mass4integral), 15.5, 50)
-        hmf = self.hmf(m_grid, ztr)
-        bias_h = self.bias(m_grid, ztr)
-        yarray = (m_grid * hmf
-                  * self._int_over_lambda2(lob, zcl, ztr, m_grid,
-                                           bias_cl, bias_h))
-        return float(np.trapz(yarray, np.log(m_grid), axis=0))
+    def bias_from_precomp(self, precomp, ltr):
+        """Return (b_zero, b_infty, delta_prj) at this ltr."""
+        P1 = precomp["P1"]; I1 = precomp["I1"]; I2 = precomp["I2"]
+        beff = precomp["b_eff"]; D_RND = precomp["Delta_RND"]
+        denom = precomp["denom"]; lob = precomp["lob"]
 
-    def _int_over_lambda2(self, lob, zcl, z, M, bias_cl, bias_h,
-                          ltr_n: int = 100):
-        ltr_grid = np.linspace(1e-10, lob, ltr_n)
-        # Omega_halos * f_area, shape (Nltr,)
-        Omf = (_Omega_halos(lob, zcl, ltr_grid, z, self.cosmo)
-               * _f_area(lob, zcl, ltr_grid, z, self.cosmo))
-        # pdf(ltr, M) broadcast to (Nltr, NM)
-        p = self.mor.pdf(ltr_grid[:, None], M[None, :], z)
-        # Clustering correction via int_over_phi_Beff (mean field)
-        phi_term = self._int_over_phi_Beff(lob, zcl, z, ltr_grid,
-                                           bias_cl, bias_h)  # (Nltr, NM)
-        yarray = p * ltr_grid[:, None] * (Omf[:, None]
-                                          + 2.0 * np.pi * phi_term)
-        return np.trapz(yarray, ltr_grid, axis=0)
+        delta_prj = (lob - ltr) / D_RND - 1.0
+        b_infty = beff * (1.0 + self.boost_slope * delta_prj)
+        if abs(denom) < 1e-12 * (abs(I1) + abs(I2) + 1e-30):
+            b_zero = b_infty
+        else:
+            b_zero = ((lob - ltr) - P1 - b_infty * I1) / denom
+        return dict(delta_prj=delta_prj, b_zero=b_zero, b_infty=b_infty)
 
-    def _int_over_phi_Beff(self, lob, zcl, z, ltr_grid, bias_cl, bias_h,
-                           n_theta: int = 50):
-        """Angular integral (cell 18 `int_over_phi_Beff`)."""
-        theta_ltr = R_lambda(ltr_grid) * (1.0 + z) / self.cosmo.chi(z)
-        theta_lob = R_lambda(lob) * (1.0 + zcl) / self.cosmo.chi(zcl)
-        # theta_grid shape (n_theta, n_ltr)
-        theta_grid = np.geomspace(1e-6, theta_lob + theta_ltr, n_theta)
-        chi_cl = float(self.cosmo.chi(zcl))
-        chi_z = float(self.cosmo.chi(z))
-        dis = np.sqrt(chi_cl ** 2 + chi_z ** 2
-                      - 2.0 * chi_cl * chi_z * np.cos(theta_grid))
-        xi_vals = self.xi_NL(dis.ravel(), zcl).reshape(dis.shape)
-        # Sigmoid scale-dependent selection bias in theta (Matteo cell 18)
-        b0, b1, b2 = 2.0, 0.5, 0.75
-        theta_1Mpc = R_lambda(lob) / chi_cl  # NB: Matteo uses chi(zob)
-        x0 = b0 * theta_1Mpc
-        k_s = b1 * 10.0 / x0
-        eff_bias_lobztr_theta = (
-            bias_cl * b2
-            + (bias_cl - bias_cl * b2)
-            / (1.0 + np.exp(-k_s * (theta_grid - x0))))
-        # Shape broadcast to (n_theta, n_ltr, n_M)
-        bM_bsel_xi = (bias_h[None, None, :]
-                      * eff_bias_lobztr_theta[:, :, None]
-                      * xi_vals[:, :, None])
-        if self.exclusion:
-            mask = dis < R_lambda(lob) * (1.0 + zcl)
-            bM_bsel_xi[mask, :] = -1.0
-        bM_bsel_xi = np.clip(bM_bsel_xi, -1.0, None)
-        yarray = (np.sin(theta_grid)[:, :, None]
-                  * (1.0 + bM_bsel_xi)
-                  * area_overlap(theta_grid, theta_lob, theta_ltr)[:, :, None])
-        return np.trapz(yarray, theta_grid[:, :, None], axis=0)
+    def bias_pipeline(self, lob, zob, ltr):
+        pre = self.bias_precompute(lob, zob)
+        out = self.bias_from_precomp(pre, ltr)
+        out.update(pre)
+        out["ltr"] = ltr
+        return out
 
-    # ---------------- numerator2 (cell 16) -------------------------------
+    # ---------------- b_lob(theta) (eq. 6) ----------------------------
 
-    def numerator2(self, lob, zcl):
-        """Two-halo projection normalisation (cell 16 `numerator2`)."""
-        key = ("numerator2", float(lob), float(zcl))
-        if key in self._cache:
-            return self._cache[key]
-        ztr_grid = self._ztr_grid(zcl)
-        intoverM = np.array([self._int_over_mass4(zcl, lob, ztr_grid[i])
-                             for i in range(ztr_grid.size)])
-        yarray = (self.cosmo.dV_dzdOm(ztr_grid)
-                  * w_z(ztr_grid, zcl)
-                  * intoverM)
-        integral = float(np.trapz(yarray, ztr_grid, axis=0))
-        self._cache[key] = integral
-        return integral
+    def b_lob_theta(self, theta, ltr, zob, lob, precomp=None):
+        """Scale-dependent optical cluster bias b_lob(theta | lob, ltr, zob)."""
+        pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
+        pr = self.bias_from_precomp(pre, ltr)
+        s = self._sigmoid_theta(np.asarray(theta, dtype=float), lob, zob)
+        return pr["b_zero"] + (pr["b_infty"] - pr["b_zero"]) * s
 
-    def _int_over_mass4(self, zcl, lob, ztr):
-        m_grid = 10.0 ** np.linspace(np.log10(self.min_mass4integral), 15.5, 100)
-        hmf = self.hmf(m_grid, ztr)
-        bias_h = self.bias(m_grid, ztr)
-        yarray = (m_grid * bias_h * hmf
-                  * self._int_over_lambda4(lob, zcl, ztr, m_grid))
-        return float(np.trapz(yarray, np.log(m_grid), axis=0))
-
-    def _int_over_lambda4(self, lob, zcl, z, M, ltr_n: int = 100):
-        ltr_grid = np.linspace(1e-10, lob, ltr_n)
-        Om_f = ltr_grid * 2.0 * np.pi * self._int_over_phi4(lob, zcl, z, ltr_grid)
-        p = self.mor.pdf(ltr_grid[:, None], M[None, :], z)
-        yarray = Om_f[:, None] * p
-        return np.trapz(yarray, ltr_grid, axis=0)
-
-    def _int_over_phi4(self, lob, zcl, z, ltr_grid, n_theta: int = 50):
-        theta_ltr = R_lambda(ltr_grid) * (1.0 + z) / self.cosmo.chi(z)
-        theta_lob = R_lambda(lob) * (1.0 + zcl) / self.cosmo.chi(zcl)
-        theta_grid = np.geomspace(1e-6, theta_lob + theta_ltr, n_theta)
-
-        x0 = 0.5 * (self.n_th_inf + self.n_th_sup) * theta_lob
-        k_s = self.damping_sigmoid / ((self.n_th_sup - self.n_th_inf) * theta_lob)
-
-        chi_cl = float(self.cosmo.chi(zcl))
-        chi_z = float(self.cosmo.chi(z))
-        dis = np.sqrt(chi_cl ** 2 + chi_z ** 2
-                      - 2.0 * chi_cl * chi_z * np.cos(theta_grid))
-        xi_vals = self.xi_NL(dis.ravel(), zcl).reshape(dis.shape)
-        if self.exclusion:
-            mask = dis < R_lambda(lob) * (1.0 + zcl)
-            xi_vals = np.where(mask, 0.0, xi_vals)
-        yarray = (np.sin(theta_grid)
-                  * (1.0 - 1.0 / (1.0 + np.exp(-k_s * (theta_grid - x0))))
-                  * xi_vals
-                  * area_overlap(theta_grid, theta_lob, theta_ltr))
-        return np.trapz(yarray, theta_grid, axis=0)
-
-    # ---------------- intrinsic + scale-dependent bias (cell 16) --------
-
-    @staticmethod
-    def Delta_prj_lob_ltr(lob, ltr):
-        return float(lob) - float(ltr)
-
-    def boost_bias(self, lob, ltr, zcl):
-        """Matteo cell 16 linear model:
-            boost = inter + slope * (Delta - <Delta>) / <Delta>
-        With defaults (1.0, 0.0), boost == 1.
-        """
-        DPRJ = self.bar_delta_prj_Beff(lob, zcl)
-        Delta = self.Delta_prj_lob_ltr(lob, ltr)
-        return (self.inter_boost_bias
-                + self.slope_boost_bias * (Delta - DPRJ) / DPRJ
-                if DPRJ != 0.0 else self.inter_boost_bias)
-
-    def bar_delta_prj_Beff(self, lob, zcl):
-        """Alias: Matteo uses this name in cell 16, identical to bar_delta_prj_bkg."""
-        return self.bar_delta_prj_bkg(lob, zcl, boost_bias=1.0)
-
-    def b_sel_lob_ltr_in(self, ltr, zcl, lob):
-        """Intrinsic (theta -> 0) selection bias (cell 16)."""
-        DPRJ = self.bar_delta_prj_Beff(lob, zcl)
-        boost = (self.inter_boost_bias
-                 + self.slope_boost_bias
-                 * (self.Delta_prj_lob_ltr(lob, ltr) - DPRJ) / DPRJ
-                 if DPRJ != 0.0 else self.inter_boost_bias)
-        barDeltaPRJ_BKG = self.bar_delta_prj_bkg(ltr, zcl, boost_bias=boost)
-        Delta = self.Delta_prj_lob_ltr(lob, ltr)
-        numerator = self.numerator2(ltr, zcl)
-        return (Delta - barDeltaPRJ_BKG) / numerator
-
-    def b_sel_lob_ltr_theta(self, theta, ltr, zcl, lob,
-                            damping: float = None):
-        """Scale-dependent selection bias b_sel(theta) (cell 16).
-
-        Sigmoid interpolation between b_sel_in (theta -> 0) and
-        bias_eff = eff_bias_ltr(ltr) * boost_bias (theta -> inf).
-        """
-        if damping is None:
-            damping = self.damping_sigmoid
-        theta = np.asarray(theta, dtype=float)
-        theta_lob = float(self._theta_lob(lob, zcl))
-
-        b_in = self.b_sel_lob_ltr_in(ltr, zcl, lob)
-        DPRJ = self.bar_delta_prj_Beff(lob, zcl)
-        boost = (self.inter_boost_bias
-                 + self.slope_boost_bias
-                 * (self.Delta_prj_lob_ltr(lob, ltr) - DPRJ) / DPRJ
-                 if DPRJ != 0.0 else self.inter_boost_bias)
-        bias_eff = self.eff_bias_ltr(ltr, zcl) * boost
-
-        x0 = 0.5 * (self.n_th_inf + self.n_th_sup) * theta_lob
-        k = damping / ((self.n_th_sup - self.n_th_inf) * theta_lob)
-        return b_in + (bias_eff - b_in) / (1.0 + np.exp(-k * (theta - x0)))
-
-    # -- convenience wrapper matching old fast-GL API names ---------------
-
+    # back-compat aliases matching the old notebook API
     def b_sel_of_theta(self, theta, lob, zob, ltr, precomp=None):
-        """Back-compat: same signature as the old fast-GL module."""
-        return self.b_sel_lob_ltr_theta(theta, ltr, zob, lob)
+        return self.b_lob_theta(theta, ltr, zob, lob, precomp=precomp)
+
+    def b_sel_lob_ltr_theta(self, theta, ltr, zcl, lob):
+        return self.b_lob_theta(theta, ltr, zcl, lob)
+
+    def eff_bias_ltr(self, ltr, zcl):
+        """Alias for b_eff(ltr, zcl) (keeps old test names working)."""
+        return self.b_eff(ltr, zcl)
 
     def b_sel_marginalised(self, theta, lob, zob, ltr_grid_size=None,
-                           precomp=None, M_typ=None):
-        """<b_sel(theta, ltr)>_{P(ltr | lob)}."""
+                           precomp=None, use_plob_ltr: bool = True):
+        """Marginalised bias (paper eq. 10).
+
+        P(ltr | lob, zob) propto P(lob | ltr, zob) * int dM P(ltr|M,z) n(M,z)
+
+        With ``use_plob_ltr=True`` (default), the P(lob|ltr) exponential-tail
+        model from `plob_ltr` is used, which sharply peaks the marginalisation
+        near ltr = lob.  With ``use_plob_ltr=False``, only the HMF-weighted
+        HOD prior P(ltr|M,z)n(M) is used -- a broader distribution that
+        de-emphasises the lob=ltr peak.
+        """
         if ltr_grid_size is None:
             ltr_grid_size = self.grid.ltr_grid_size
-        if M_typ is None:
-            M_typ = 1.3e14
+        pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
 
-        lo = 1.0
-        hi = max(lob + 5.0, 1.5 * lob)
-        t_nodes, t_wts = gl_nodes(lo, hi, ltr_grid_size)
-        p_weights = self.mor.pdf(t_nodes[:, None],
-                                 np.array([M_typ])[None, :], zob).ravel()
+        # ltr grid spans from 1 to the maximum feasible true richness
+        # given the projection tail.  We extend a little past lob so the
+        # delta-like peak near ltr = lob is well-resolved.
+        t_nodes, t_wts = gl_nodes(1.0, float(lob) + 5.0, ltr_grid_size)
+
+        # Build P(ltr | M, z) n(M, z) weighting, integrated over M
+        log10_Mmin = np.log10(self.min_mass4integral)
+        m_grid = 10.0 ** np.linspace(log10_Mmin, self.ln_M_max_log10, 50)
+        hmf_m = self.hmf(m_grid, zob)
+        p_ltr_M = self.mor.pdf(t_nodes[:, None], m_grid[None, :], zob)
+        # int dM P(ltr|M,z) n(M,z) -> proportional to n(ltr)
+        p_ltr_prior = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
+                               np.log(m_grid), axis=1)
+
+        if use_plob_ltr:
+            from .plob_ltr import P_lob_given_ltr
+            p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(ltr), zob))
+                                  for ltr in t_nodes])
+            p_ltr = p_lob_ltr * p_ltr_prior
+        else:
+            p_ltr = p_ltr_prior
 
         theta_arr = np.asarray(theta, dtype=float)
         num = np.zeros_like(theta_arr)
         den = 0.0
-        for ltr, w, pw in zip(t_nodes, t_wts, p_weights):
-            weight = w * float(pw)
+        for ltr, w, pw in zip(t_nodes, t_wts, p_ltr):
+            weight = float(w * pw)
             if weight == 0.0:
                 continue
-            num = num + weight * self.b_sel_lob_ltr_theta(
-                theta_arr, ltr, zob, lob)
+            num = num + weight * self.b_lob_theta(
+                theta_arr, ltr, zob, lob, precomp=pre)
             den += weight
         return num / den if den > 0 else np.full_like(theta_arr, np.nan)
-
-    # -- diagnostic "bias_pipeline" for back-compat with old notebooks ----
-
-    def bias_pipeline(self, lob, zob, ltr):
-        """Return the key quantities used by cell 16's b_sel(theta)."""
-        b_halo = float(self.eff_bias_ltr(lob, zob))
-        eff = float(self.eff_bias_ltr(ltr, zob))
-        DPRJ = float(self.bar_delta_prj_Beff(lob, zob))
-        num2 = float(self.numerator2(ltr, zob))
-        b_in = float(self.b_sel_lob_ltr_in(ltr, zob, lob))
-        DPRJ_bkg = float(self.bar_delta_prj_bkg(ltr, zob, boost_bias=1.0))
-        return dict(lob=lob, zob=zob, ltr=ltr,
-                    b_halo_eff_at_lob=b_halo,
-                    eff_bias_ltr=eff,
-                    bar_delta_prj_Beff=DPRJ,
-                    bar_delta_prj_bkg=DPRJ_bkg,
-                    numerator2=num2,
-                    Delta_prj=self.Delta_prj_lob_ltr(lob, ltr),
-                    b_sel_in=b_in)
-
-    def bias_precompute(self, lob, zob):
-        """Back-compat stub: everything is cached via self._cache now."""
-        # Warm key caches so subsequent marginalisation doesn't re-run them.
-        self.bar_delta_prj_Beff(lob, zob)
-        return dict(lob=lob, zob=zob)
-
-    def bias_from_precomp(self, precomp, ltr):
-        """Back-compat stub returning (b_small, b_large) for old callers."""
-        lob = precomp["lob"]
-        zob = precomp["zob"]
-        return dict(b_small=float(self.b_sel_lob_ltr_in(ltr, zob, lob)),
-                    b_large=float(self.eff_bias_ltr(ltr, zob)),
-                    delta=(lob - ltr) / self.bar_delta_prj_Beff(lob, zob) - 1.0)

@@ -50,8 +50,8 @@ def test_sel_bias_precompute_invariance(sel_bias):
     pre = sel_bias.bias_precompute(20.0, 0.5)
     out_a = sel_bias.bias_from_precomp(pre, 18.0)
     out_b = sel_bias.bias_from_precomp(pre, 18.0)
-    assert out_a["b_large"] == out_b["b_large"]
-    assert out_a["b_small"] == out_b["b_small"]
+    assert out_a["b_infty"] == out_b["b_infty"]
+    assert out_a["b_zero"] == out_b["b_zero"]
 
 
 def test_eff_bias_ltr_reasonable(sel_bias):
