@@ -57,7 +57,20 @@ class SelBias:
                  mor: MOR, xi_nl, grid: GridConfig = DEFAULT_GRID,
                  min_mass4integral: float = 1.0e13,
                  ln_M_max_log10: float = 15.5,
-                 n_ltr: int = 60):
+                 n_ltr: int = 60,
+                 z_scheme: str = "E"):
+        """
+        Parameters
+        ----------
+        z_scheme : {"E", "D"}
+            z-axis integration recipe.
+            "E" (default): split by physics into ring + outer-fg + outer-bg,
+                GL on z for the ring, GL on ln|Delta chi| for the outer.
+                Kernel-agnostic; works for P[1], I1, I2 equally.
+            "D": arcsinh transform  t = asinh(|Delta_chi_par| / R_excl).
+                Single GL grid per side covering ring+peak+outer in one pass.
+                Tailored to the xi_NL power-law of I1, I2.
+        """
         self.cosmo = cosmo
         self.pk = pk
         self.hmf = hmf
@@ -68,6 +81,7 @@ class SelBias:
         self.min_mass4integral = min_mass4integral
         self.ln_M_max_log10 = ln_M_max_log10
         self.n_ltr = n_ltr
+        self.z_scheme = z_scheme
         self._cache: dict = {}
 
     # ---------------- small helpers -----------------------------------
@@ -109,6 +123,95 @@ class SelBias:
         self._cache[key] = val
         return val
 
+    # ---------------- z-grid schemes ----------------------------------
+
+    def _z_grid_option_E(self, lob, zob, Nz, chi_o, R_excl,
+                         z_fg_lo, z_bg_hi,
+                         zs_ref, chi_ref, dchi_dz_ref):
+        """Option E: split by physics into R1 (ring) + R2+R3 (outer fg+bg).
+
+        R1 [|z-zob| < dz_excl]:         GL in z, n_ring = max(9, Nz/4)
+        R2+R3 outer regions per side:   GL in u = ln|Delta_chi_par|,
+                                        n_outer = max(15, (Nz-n_ring)/2)
+        """
+        dchi_dz_at_zob = float(np.interp(zob, zs_ref, dchi_dz_ref))
+        dz_excl = R_excl / dchi_dz_at_zob
+
+        n_ring = max(9, Nz // 4)
+        z_ring_lo = max(zob - dz_excl, z_fg_lo)
+        z_ring_hi = min(zob + dz_excl, z_bg_hi)
+        z_ring, w_ring = gl_nodes(z_ring_lo, z_ring_hi, n_ring)
+
+        n_outer = max(15, (Nz - n_ring) // 2)
+        dis_fg_max = chi_o - float(self.cosmo.chi(z_fg_lo))
+        dis_bg_max = float(self.cosmo.chi(z_bg_hi)) - chi_o
+
+        if R_excl < dis_fg_max:
+            u_fg, w_u_fg = gl_nodes(np.log(R_excl), np.log(dis_fg_max), n_outer)
+            dis_fg = np.exp(u_fg)
+            z_fg = np.interp(chi_o - dis_fg, chi_ref, zs_ref)
+            dchi_dz_fg = np.interp(z_fg, zs_ref, dchi_dz_ref)
+            w_z_fg = w_u_fg * dis_fg / dchi_dz_fg
+        else:
+            z_fg = np.array([]); w_z_fg = np.array([])
+
+        if R_excl < dis_bg_max:
+            u_bg, w_u_bg = gl_nodes(np.log(R_excl), np.log(dis_bg_max), n_outer)
+            dis_bg = np.exp(u_bg)
+            z_bg = np.interp(chi_o + dis_bg, chi_ref, zs_ref)
+            dchi_dz_bg = np.interp(z_bg, zs_ref, dchi_dz_ref)
+            w_z_bg = w_u_bg * dis_bg / dchi_dz_bg
+        else:
+            z_bg = np.array([]); w_z_bg = np.array([])
+
+        # Assemble (foreground ascending, ring ascending, background ascending)
+        z_fg_sort = z_fg[::-1] if z_fg.size else z_fg
+        w_fg_sort = w_z_fg[::-1] if w_z_fg.size else w_z_fg
+        zs = np.concatenate([z_fg_sort, z_ring, z_bg])
+        wzs = np.concatenate([w_fg_sort, w_ring, w_z_bg])
+        return zs, wzs
+
+    def _z_grid_option_D(self, lob, zob, Nz, chi_o, R_excl,
+                         z_fg_lo, z_bg_hi,
+                         zs_ref, chi_ref, dchi_dz_ref):
+        """Option D: arcsinh transform (tailored to I1 / I2).
+
+        Change of variables  t = asinh(|Delta_chi_par| / R_excl)
+        maps both the ring plateau (small |Delta_chi_par|) and the
+        exclusion peak (Delta_chi_par = R_excl) into a smooth function
+        of t with bounded Jacobian  dd/dt = R_excl cosh(t).
+
+        Single GL grid per side (no region split), symmetric around
+        zob.  Half of Nz per side.
+        """
+        n_side = max(15, Nz // 2)
+        dis_fg_max = chi_o - float(self.cosmo.chi(z_fg_lo))
+        dis_bg_max = float(self.cosmo.chi(z_bg_hi)) - chi_o
+        t_fg_max = float(np.arcsinh(dis_fg_max / R_excl))
+        t_bg_max = float(np.arcsinh(dis_bg_max / R_excl))
+
+        # Foreground:  t in [0, t_fg_max];  d = R_excl sinh(t), z_fg = z at chi_o - d
+        t_fg, w_t_fg = gl_nodes(0.0, t_fg_max, n_side)
+        dis_fg = R_excl * np.sinh(t_fg)
+        z_fg = np.interp(chi_o - dis_fg, chi_ref, zs_ref)
+        dchi_dz_fg = np.interp(z_fg, zs_ref, dchi_dz_ref)
+        # dz/dt = (dd/dt) / (dchi/dz) = R_excl cosh(t) / (c/H(z))
+        dz_dt_fg = R_excl * np.cosh(t_fg) / dchi_dz_fg
+        w_z_fg = w_t_fg * dz_dt_fg
+
+        # Background
+        t_bg, w_t_bg = gl_nodes(0.0, t_bg_max, n_side)
+        dis_bg = R_excl * np.sinh(t_bg)
+        z_bg = np.interp(chi_o + dis_bg, chi_ref, zs_ref)
+        dchi_dz_bg = np.interp(z_bg, zs_ref, dchi_dz_ref)
+        dz_dt_bg = R_excl * np.cosh(t_bg) / dchi_dz_bg
+        w_z_bg = w_t_bg * dz_dt_bg
+
+        # Assemble (foreground ascending in z, then background)
+        zs = np.concatenate([z_fg[::-1], z_bg])
+        wzs = np.concatenate([w_z_fg[::-1], w_z_bg])
+        return zs, wzs
+
     # ---------------- Operator P[X] (eq. 9) ---------------------------
     #
     # Returns three scalars: P[1], I1, I2 (eqs 8/9).
@@ -144,89 +247,25 @@ class SelBias:
         chi_fg_lo = float(self.cosmo.chi(z_fg_lo))
         chi_bg_hi = float(self.cosmo.chi(z_bg_hi))
 
-        # Option E: split by physics into three regions.
-        #
-        # The z-integrand f(z) has a non-trivial structure with three
-        # characteristic scales:
-        #
-        #   1. "Ring plateau"  (|z - zob| < dz_excl = R_excl / (c/H(zob)))
-        #       Inside the exclusion z-band, the small-theta part of the
-        #       integrand is killed by exclusion, but theta > R_excl/chi
-        #       still contributes.  f(z) is SMOOTH here, roughly a
-        #       symmetric plateau.  Gauss-Legendre on uniform z suffices.
-        #
-        #   2. "Exclusion peak"  (|Delta_chi_parallel| just outside R_excl)
-        #       xi_NL(Delta_chi) ~ Delta_chi^(-1.7) is maximal at
-        #       Delta_chi = R_excl, making f(z) peak there.  Log-spacing
-        #       in (|Delta_chi_parallel| - R_excl) or Gauss-Legendre on
-        #       u = ln|Delta_chi_parallel| resolves the peak and the
-        #       power-law decay smoothly.
-        #
-        #   3. "Outer power-law decay"  (Delta_chi_parallel >> R_excl)
-        #       smooth falling tail, captured by the same log-spaced
-        #       Gauss-Legendre as region 2.
-        #
-        # Integral splits as:
-        #   I = I_ring + I_outer_fg + I_outer_bg
+        # Build the z grid + weights via the chosen scheme.
         R_excl = R_lambda(lob) * (1.0 + zob)
-
-        # dchi/dz at zob for converting R_excl -> dz_excl
         zs_ref = np.linspace(0.0, 2.0, 2000)
         chi_ref = self.cosmo.chi(zs_ref)
         dchi_dz_ref = np.gradient(chi_ref, zs_ref)
-        dchi_dz_at_zob = float(np.interp(zob, zs_ref, dchi_dz_ref))
-        dz_excl = R_excl / dchi_dz_at_zob
 
-        # ---- Region 1: inner ring plateau, uniform z GL ----
-        n_ring = max(9, g.Nz // 4)            # typical 15-20 nodes
-        z_ring_lo = max(zob - dz_excl, z_fg_lo)
-        z_ring_hi = min(zob + dz_excl, z_bg_hi)
-        z_ring, w_ring = gl_nodes(z_ring_lo, z_ring_hi, n_ring)
-
-        # ---- Regions 2+3: outer foreground and background
-        # GL on u = ln(|Delta chi_parallel|), from ln(R_excl) to ln(dis_max)
-        n_outer = max(15, (g.Nz - n_ring) // 2)  # typical 30-35 nodes per side
-        dis_fg_max = chi_o - chi_fg_lo
-        dis_bg_max = chi_bg_hi - chi_o
-
-        # If R_excl exceeds dis_fg_max or dis_bg_max (very tight photo-z
-        # kernel), clamp; the outer region may vanish.
-        if R_excl < dis_fg_max:
-            u_fg_nodes, w_u_fg = gl_nodes(np.log(R_excl), np.log(dis_fg_max),
-                                          n_outer)
-            dis_fg_nodes = np.exp(u_fg_nodes)
-            # dz/du = |dchi/du| / (dchi/dz) = dchi_nodes / dchi_dz
-            chi_fg_nodes = chi_o - dis_fg_nodes
-            z_fg_nodes = np.interp(chi_fg_nodes, chi_ref, zs_ref)
-            dchi_dz_fg = np.interp(z_fg_nodes, zs_ref, dchi_dz_ref)
-            # Note: for foreground, z < zob, so dz = -dchi/(dchi/dz).
-            # But we integrate |f(z)| forward in z (GL weights are positive).
-            # The sign handling is: int_{z_lo}^{zob} f dz = int_{0}^{dis_max} f * dz/ddis ddis
-            # with dz/ddis = -1/(dchi/dz) for fg, but we absorb the sign into
-            # a reversal of order.  Simplest: compute as positive using
-            # w_z_fg = w_u_fg * dis_fg_nodes / dchi_dz_fg.
-            w_z_fg = w_u_fg * dis_fg_nodes / dchi_dz_fg
+        if self.z_scheme == "E":
+            zs, wzs = self._z_grid_option_E(lob, zob, g.Nz,
+                                            chi_o, R_excl,
+                                            z_fg_lo, z_bg_hi,
+                                            zs_ref, chi_ref, dchi_dz_ref)
+        elif self.z_scheme == "D":
+            zs, wzs = self._z_grid_option_D(lob, zob, g.Nz,
+                                            chi_o, R_excl,
+                                            z_fg_lo, z_bg_hi,
+                                            zs_ref, chi_ref, dchi_dz_ref)
         else:
-            z_fg_nodes = np.array([])
-            w_z_fg = np.array([])
-
-        if R_excl < dis_bg_max:
-            u_bg_nodes, w_u_bg = gl_nodes(np.log(R_excl), np.log(dis_bg_max),
-                                          n_outer)
-            dis_bg_nodes = np.exp(u_bg_nodes)
-            chi_bg_nodes = chi_o + dis_bg_nodes
-            z_bg_nodes = np.interp(chi_bg_nodes, chi_ref, zs_ref)
-            dchi_dz_bg = np.interp(z_bg_nodes, zs_ref, dchi_dz_ref)
-            w_z_bg = w_u_bg * dis_bg_nodes / dchi_dz_bg
-        else:
-            z_bg_nodes = np.array([])
-            w_z_bg = np.array([])
-
-        # Assemble full z-grid (fg ascending, ring ascending, bg ascending)
-        z_fg_nodes_sorted = z_fg_nodes[::-1] if z_fg_nodes.size else z_fg_nodes
-        w_z_fg_sorted = w_z_fg[::-1] if w_z_fg.size else w_z_fg
-        zs = np.concatenate([z_fg_nodes_sorted, z_ring, z_bg_nodes])
-        wzs = np.concatenate([w_z_fg_sorted, w_ring, w_z_bg])
+            raise ValueError(f"Unknown z_scheme={self.z_scheme!r}; "
+                             "expected 'E' or 'D'")
 
         chi_z = self.cosmo.chi(zs)
         dV = self.cosmo.dV_dzdOm(zs)
