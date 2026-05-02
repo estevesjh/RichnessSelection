@@ -153,21 +153,20 @@ class SelBias:
             half += 1
         n_fg = n_bg = half
 
-        # Step 3: pin the inner edge of the LoS grid at the halo exclusion
-        # radius R_excl = R_lambda(lob) * (1 + zob). Inside exclusion, the
-        # integrand is identically zero via the xi_NL mask; spacing nodes
-        # there just wastes weight.  Starting at R_excl also places a node
-        # exactly on the step-edge of the integrand (xi_NL rises sharply
-        # just outside exclusion), which otherwise spoils Simpson/trapz
-        # convergence.
+        # Important subtlety: the halo-exclusion mask is on the 3-D
+        # separation Delta_chi(z, theta), NOT on the LoS component
+        # |Delta_chi_||(z)| alone.  So inside the "exclusion z-band"
+        # (|z - zob| < R_excl / (c/H(zob))) the integrand f(z) is
+        # non-zero because part of the theta range (theta > R_excl/chi)
+        # escapes exclusion and contributes a "ring" term.  Do NOT pin
+        # the LoS grid at R_excl -- go all the way to epsilon so the
+        # inner ring band gets integrated.
         R_excl = R_lambda(lob) * (1.0 + zob)
 
         dis_fg_max = chi_o - chi_fg_lo
         dis_bg_max = chi_bg_hi - chi_o
-        # Inner edge sits just outside the exclusion; clamp so we never
-        # cross dis_max if R_excl happens to exceed the photo-z support.
-        dis_min_fg = min(R_excl, 0.5 * dis_fg_max)
-        dis_min_bg = min(R_excl, 0.5 * dis_bg_max)
+        dis_min_fg = max(1e-3, 1e-4 * dis_fg_max)
+        dis_min_bg = max(1e-3, 1e-4 * dis_bg_max)
 
         u_fg = np.linspace(np.log(dis_min_fg), np.log(dis_fg_max), n_fg)
         u_bg = np.linspace(np.log(dis_min_bg), np.log(dis_bg_max), n_bg)
