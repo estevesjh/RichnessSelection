@@ -371,6 +371,84 @@ schemes take \(\approx 19\) ms; timing scales linearly
 \label{fig:DE_convergence}
 \end{figure}
 
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figs/fz_DE_truth_overlay.png}
+\caption{Where the nodes live and how each scheme's cumulative
+integral drifts. \emph{Top:} \(f_{I_2}(z)\) truth (black, densely
+sampled) with the Option~E (blue circles) and Option~D (red
+squares) nodes at \(N_z\!=\!80\) overlaid. Both schemes cover the
+double-peaked exclusion structure at
+\(z=\zob\pm\delta z_{\rm excl}\) densely; E places its ring-plateau
+nodes on uniform \(z\), D concentrates them via the \(\arcsinh\)
+compression, so the two schemes' node distributions differ
+visibly inside the exclusion band. \emph{Bottom:} cumulative
+integral residual
+\(\bigl[\sum_{z_i<z} w_i f(z_i) - \int_{z_{\rm lo}}^{z}\!\!f\,dz\bigr]
+/ I_2^{\rm quad}\) (in percent; the reference
+\(\int_{z_{\rm lo}}^{z} f\,dz\) is built piecewise from
+\texttt{scipy.integrate.quad} with rtol=\(10^{-5}\)). Both schemes
+accumulate a positive excess (up to \(+2\%\)) crossing the
+exclusion peaks, then relax toward their asymptotic bias
+(E: \(-0.33\%\), D: \(+0.06\%\)) as the outer tail integrates out.}
+\label{fig:fz_DE_overlay}
+\end{figure}
+
+\paragraph{The oscillation is largely an inner-grid effect.}
+When the scipy.quad validation script uses the \emph{same} inner
+\((M,\lambda,\theta)\) grids as our \texttt{\_P\_operator} (GL on all
+three, with \(N_M\!=\!24\), \(N_\lambda\!=\!60\), \(N_\theta\!=\!20\))
+rather than the trapezoidal/linspace/geomspace grids in the prior
+\texttt{validations/quad\_validate.py}, the truth values shift:
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{l r r r}
+\toprule
+Inner-grid convention & \(\Pop[1]_{\rm quad}\) & \(I_2^{\rm quad}\)
+                      & \(I_1^{\rm quad}\) \\
+\midrule
+trapz \(\times\) linspace \(\times\) geomspace (prior)
+                      & \(1.9976\) & \(3.697\!\times\!10^{-1}\)
+                      & \(2.494\!\times\!10^{-1}\) \\
+\textbf{GL matched to \_P\_operator}
+                      & \(\mathbf{1.9949}\) & \(\mathbf{3.677\!\times\!10^{-1}}\)
+                      & \(\mathbf{2.481\!\times\!10^{-1}}\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{4pt}
+Against the matched-inner quad truth, at \(N_z\!=\!80\):
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{l r r}
+\toprule
+Quantity & Option E err & Option D err \\
+\midrule
+\(\Pop[1]\) & \(+0.005\%\) & \(-0.003\%\) \\
+\(I_2\)     & \(-0.33\%\)  & \(+0.06\%\)  \\
+\(I_1\)     & \(-0.31\%\)  & \(+0.18\%\)  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\(\Pop[1]\) is now essentially bit-exact between our GL grids and
+the quad reference (\(5\!\times\!10^{-5}\)), which tells us
+everything we need about the z-axis schemes: \emph{the old
+``0.15\% floor'' on \(\Pop[1]\) was the trapz vs GL convention
+difference, not a convergence issue}. For \(I_1, I_2\) the z-axis
+residual is now \(\sim 0.3\%\) (E) and \(\sim 0.1\%\) (D); the
+earlier \(\sim 0.5\)--\(1\%\) ``oscillation'' reported against the
+prior \texttt{quad\_validate.py} was dominated by the inner-grid
+convention mismatch rather than by a z-axis convergence failure.
+This is validated by
+\texttt{validations/quad\_matched\_inner.py} of
+\texttt{RichnessSelection}.
+
 \vspace{4pt}
 Cross-check across \((\lob,\zob)\) bins at \(N_z=80\)
 (relative D/E for the integrals, absolute for the bias):
