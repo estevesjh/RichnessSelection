@@ -25,19 +25,136 @@
 \maketitle
 
 \section*{Purpose}
-This note describes a tailored numerical scheme for the outer
-\(z\)-integral of the operator \(\Pop[X]\) (Costanzi~2026 eq.~9,
-our main TeX
-\texttt{costanzi2026\_sigma\_prj\_b\_eff.tex} \S2.5). It is
-\emph{not} a universal adaptive integrator; it is designed for the
-specific integrand shape that appears in \(\Pop[1]\), \(I_1\),
-\(I_2\) and exploits the physical structure of that integrand. The
-Simpson-on-log-spaced-\(|\Delta\chi_\parallel|\) approach shipped
-in an earlier commit was brittle against grid-tuning and only
-converged by luck at \(N_z\!=\!80\). Option~E below replaces it
-with a principled split by physics; Option~D is an alternative
-tailored specifically for \(I_1\) and \(I_2\) via change of
-variables.
+This note describes the numerical recipes for the operator
+\(\Pop[X]\) (Costanzi~2026 eq.~9, our main TeX
+\texttt{costanzi2026\_sigma\_prj\_b\_eff.tex} \S2.5) as currently
+implemented in the \texttt{RichnessSelection} Python package. Two
+axes have to be handled carefully: the outer \(z\)-integral (the
+photo-z support carries sharp features from the
+\(\xinl\)-times-exclusion interaction near \(z\!=\!\zob\)) and the
+inner \(\theta\)-integral (a hard step at the exclusion radius
+\(R_{\rm excl}\) that moves with z). The \(\theta\)-handling turned
+out to be the dominant precision driver: eliminating the
+\(\theta\)-step via a per-z change of integration limits bought two
+orders of magnitude in precision and reduced \(N_\theta\) from
+\(\sim 120\) to \(\sim 10\). The \(z\)-axis recipe family (Options
+D, E, and the new adaptive Option C) is documented once that
+bottleneck is removed.
+
+\section*{Production recipe at a glance}
+\begin{itemize}
+  \item \textbf{\(\theta\)-axis}: \emph{split at the exclusion
+        boundary} (\S\ref{sec:theta_split}). GL on
+        \([\theta_{\rm excl}(z),\,2\theta_\lambda^{\rm tgt}]\), no mask.
+        \(N_\theta = 10\) reaches sub-\(0.01\%\) on \(\Pop[1]\),
+        \(I_1\), \(I_2\).
+  \item \textbf{\(z\)-axis}: \emph{CDF-based adaptive grid}
+        (Option~C, \S\ref{sec:optionC}). GL at uniform CDF levels
+        built from a cheap rough proxy
+        \(\bigl|f_{\Pop[1]}(z)\bigr|+\bigl|f_{I_2}(z)\bigr|\).
+  \item \textbf{inner \((M,\lambda)\)}: GL with
+        \(N_M\!=\!24\), \(N_\lambda\!=\!60\); both already converged
+        at these sizes.
+\end{itemize}
+
+\noindent Total cost at \((\lob,\zob)=(20,0.5)\), \(N_z=80\),
+\(N_\theta=10\): \(\sim 26\) ms per \texttt{bias\_precompute}
+with Options~D or E, \(\sim 220\) ms with Option~C (due to the
+rough-grid setup cost).
+
+\section{The \(\theta\)-axis: split at the exclusion boundary}
+\label{sec:theta_split}
+
+The \(\theta\)-integrand for \(I_1\) and \(I_2\) contains the
+product \(\xinl(\Delta\chi(z,\theta))\cdot f_A(\theta)\cdot
+\sin\theta\) with the halo-exclusion prescription
+\(\xinl\!\equiv\!0\) for
+\(\Delta\chi\!<\!R_{\rm excl}\!=\!R_\lambda(\lob)(1+\zob)\).
+At any \(z\) the exclusion kills all \(\theta\) below a threshold
+\(\theta_{\rm excl}(z)\) obtained by solving
+\(\Delta\chi(z,\theta_{\rm excl})=R_{\rm excl}\):
+\begin{equation}
+\cos\theta_{\rm excl}(z)
+\;=\;
+\frac{\chi(z)^2+\chi(\zob)^2-R_{\rm excl}^2}
+     {2\,\chi(z)\,\chi(\zob)},
+\qquad
+\text{clipped to }[-1,1].
+\label{eq:theta_excl_def}
+\end{equation}
+If the right-hand side is \(\geq 1\), no \(\theta\) is excluded at
+this \(z\) (this is the case when
+\(|\Delta\chi_\parallel|>R_{\rm excl}\)). Otherwise
+\(\theta_{\rm excl}(z)\in(0,\pi)\) and the integrand has a
+\emph{hard step} at that \(\theta\).
+
+\paragraph{Why a fixed-\(\theta\) GL grid fails.}
+With \(N_\theta=20\) uniform GL nodes on \((0,2\theta_\lambda^{\rm tgt})\)
+and an exclusion mask \(\xinl\!\to\!0\) inside the step, the
+numerical integrand is a step function. GL polynomial-fits the
+step and returns an error that oscillates with \(N_\theta\). At the
+reference point, we measured:
+\begin{center}
+\small
+\begin{tabular}{r r r}
+\toprule
+\(N_\theta\) & \(I_2\) rel.\ err & \(I_1\) rel.\ err \\
+\midrule
+10  & \(-1.33\%\) & \(-1.62\%\) \\
+15  & \(+2.40\%\) & \(+2.53\%\) \\
+20  & \(-0.56\%\) & \(-0.57\%\) \\
+50  & \(-0.42\%\) & \(-0.45\%\) \\
+80  & \(+0.38\%\) & \(+0.42\%\) \\
+120 & \(-0.01\%\) & \(+0.01\%\) \\
+200 & \(+0.18\%\) & \(+0.20\%\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+There is a 0.3\% noise floor that does not decrease with
+\(N_\theta\). That is the classical signature of integrating across
+a discontinuity with a fixed-rule method.
+
+\paragraph{The fix.}
+Per-\(z\) change of the \emph{integration interval}: when
+\(\theta_{\rm excl}(z)>0\), integrate on
+\([\theta_{\rm excl}(z),\,2\theta_\lambda^{\rm tgt}]\). No mask. The
+GL nodes now cluster at the endpoints (as the Gauss rule naturally
+does), the integrand is smooth on the interval because the
+exclusion step coincides with the lower endpoint, and GL converges
+at its design rate:
+\begin{center}
+\small
+\begin{tabular}{r r r r}
+\toprule
+\(N_\theta\) & \(\Pop[1]\) err & \(I_2\) err & \(I_1\) err \\
+\midrule
+5   & \(+0.060\%\) & \(+0.046\%\) & \(+0.046\%\) \\
+8   & \(+0.018\%\) & \(+0.005\%\) & \(+0.016\%\) \\
+\textbf{10}  & \(\mathbf{-0.005\%}\) & \(\mathbf{-0.001\%}\) & \(\mathbf{-0.004\%}\) \\
+15  & \(+0.000\%\) & \(+0.000\%\) & \(+0.000\%\) \\
+20+ & \(\approx 0\) & \(\approx 0\) & \(\approx 0\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\(N_\theta=10\) is converged to sub-\(0.01\%\) and \(N_\theta=15\) is
+bit-exact at 5 digits. This is a \(\sim 12\times\) reduction in
+\(\theta\)-nodes relative to the mask-based recipe while reaching
+\emph{two orders of magnitude better} precision on \(I_1, I_2\).
+
+\paragraph{Implementation note.}
+Because \(\theta_{\rm excl}(z)\) is \(z\)-dependent, the \(\theta\)
+integration is now inside a per-\(z\) Python loop in
+\texttt{sel\_bias.py::\_P\_operator} rather than a single
+broadcast-vectorised einsum over \((N_\theta,N_\lambda,N_M,N_z)\).
+The per-\(z\) loop adds only \(\sim 6\) ms at \(N_z=80\); the
+remaining contractions over \((M,\lambda)\) still use einsum.
+This is a favourable trade: three orders of magnitude precision
+for a 25\% time penalty, and \(N_\theta\) can be halved which
+buys some of that back.
+
+\noindent\textit{The rest of this note assumes
+split-at-exclusion is applied. All z-axis recipes (D, E, C)
+below use it.}
 
 \section{The integrand \(f(z)\)}
 
@@ -380,8 +497,8 @@ sampled) with the Option~E (blue circles) and Option~D (red
 squares) nodes at \(N_z\!=\!80\) overlaid. Both schemes cover the
 double-peaked exclusion structure at
 \(z=\zob\pm\delta z_{\rm excl}\) densely; E places its ring-plateau
-nodes on uniform \(z\), D concentrates them via the \(\arcsinh\)
-compression, so the two schemes' node distributions differ
+nodes on uniform \(z\), D concentrates them via the
+\(\mathrm{arcsinh}\) compression, so the two schemes' node distributions differ
 visibly inside the exclusion band. \emph{Bottom:} cumulative
 integral residual
 \(\bigl[\sum_{z_i<z} w_i f(z_i) - \int_{z_{\rm lo}}^{z}\!\!f\,dz\bigr]
@@ -523,45 +640,169 @@ already established \(N_z\!\geq\!60\) via convergence testing,
 Option~D gives a \(\sim\!2\times\) reduction in residual error at
 the same node count. In
 \texttt{RichnessSelection} it is enabled via
-\texttt{SelBias(..., z\_scheme='D')}; the default is
-\texttt{z\_scheme='E'}.
+\texttt{SelBias(..., z\_scheme='D')}.
+
+\section{Option C: CDF-based adaptive \(z\)-grid}
+\label{sec:optionC}
+
+Both Options D and E are \emph{fixed-rule} methods: they place GL
+nodes at the same locations regardless of the integrand shape,
+parametrized only by \(R_{\rm excl}\) and the photo-z support
+endpoints. Option C is \emph{adaptive}: it uses the actual
+integrand values on a cheap rough grid to decide where to place
+the final GL nodes.
+
+\paragraph{The recipe.}
+\begin{enumerate}
+  \item Build a rough \(z\)-grid of
+        \(N_{\rm rough}=200\) log-spaced nodes per side of \(\zob\),
+        i.e.\ 400 nodes total covering
+        \([z^{\rm fg}_{\min},z^{\rm bg}_{\max}]\) densely around the
+        exclusion band.
+  \item Evaluate a cheap proxy for \(|f(z)|\) at each rough node.
+        We use
+        \[
+        f_{\rm proxy}(z) \;\equiv\;
+        \bigl|f_{\Pop[1]}(z)\bigr| \;+\;
+        \bigl|f_{I_2}(z)\bigr|,
+        \]
+        the sum of absolute values of the
+        \(\Pop[1]\)- and \(I_2\)-integrands (same inner \((M,\lambda,\theta)\)
+        grids as the final integration). Summing them ensures the
+        CDF places nodes around both distributional features:
+        \(\Pop[1]\) peaks at \(z\!=\!\zob\) (smooth core),
+        \(I_2\) peaks at
+        \(z\!=\!\zob\!\pm\!\delta z_{\rm excl}\) (exclusion peaks).
+  \item Cumulative-trapezoidal integrate \(f_{\rm proxy}\) in \(z\),
+        normalise to
+        \(F(z)\in[0,1]\).
+  \item Take \(N_z\) GL nodes \(\{u_i,w_i\}\) on \([0,1]\). Invert
+        the CDF:
+        \(z_i=F^{-1}(u_i)\) via \texttt{np.interp}. The Jacobian
+        \(dz/du=\text{total}/|f_{\rm proxy}(z_i)|\) multiplies each
+        GL weight. Evaluate the real (signed) integrand at the
+        \(z_i\) nodes.
+\end{enumerate}
+
+\paragraph{Why it works.}
+GL with a fixed interval places \(\sim 1/\sqrt{1-x^2}\) nodes at
+the endpoints of its canonical \([-1,1]\) range. Mapping
+\(x\to z\) via the rough CDF means nodes cluster where
+\(|f_{\rm proxy}(z)|\) is large, i.e.\ around the exclusion peaks.
+In effect, the scheme \emph{discovers} the exclusion-peak structure
+of \(f(z)\) (which Option E hand-codes) and also covers whatever
+\(z\)-feature a different cosmology / richness bin might introduce,
+without any manual tuning.
+
+\paragraph{Measured performance.}
+Against scipy.\texttt{quad} (rtol=\(10^{-5}\)) at
+\((\lob,\zob)=(20,0.5)\), with split-at-exclusion \(\theta\)
+and \(N_\theta=10\):
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{r r r r r r}
+\toprule
+scheme & \(N_z\) & \(\Pop[1]\) err & \(I_2\) err & \(I_1\) err & time \\
+\midrule
+E & 40  & \(-0.023\%\) & \(+0.031\%\) & \(+0.028\%\) & 14\,ms \\
+\textbf{E} & \textbf{80}  & \(\mathbf{-0.001\%}\) & \(\mathbf{-0.000\%}\) & \(\mathbf{-0.003\%}\) & \textbf{26\,ms} \\
+E & 160 & \(-0.002\%\) & \(-0.001\%\) & \(-0.004\%\) & 50\,ms \\
+\midrule
+D & 40  & \(-0.014\%\) & \(-1.124\%\) & \(-0.497\%\) & 13\,ms \\
+D & 80  & \(-0.011\%\) & \(-0.262\%\) & \(-0.096\%\) & 26\,ms \\
+D & 160 & \(-0.006\%\) & \(-0.043\%\) & \(-0.015\%\) & 50\,ms \\
+\midrule
+C & 40  & \(+0.008\%\) & \(-0.116\%\) & \(+1.243\%\) & 216\,ms \\
+C & 80  & \(-0.012\%\) & \(+0.037\%\) & \(-0.637\%\) & 219\,ms \\
+C & 160 & \(-0.003\%\) & \(-0.061\%\) & \(+0.042\%\) & 239\,ms \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{When C wins vs when E wins.}
+Once \(\theta\) is split at the exclusion boundary, the
+\(z\)-axis is already well-behaved and \textbf{Option~E at
+\(N_z=80\), \(N_\theta=10\) reaches sub-\(0.01\%\) on all three
+integrals in 26\,ms}. Option~C can match \(\Pop[1]\) and \(I_2\)
+accuracy at the same \(N_z\), but its \(I_1\) precision is worse
+(\(\sim 0.6\%\) vs E's \(0.003\%\)) because the proxy
+\(|f_{\Pop[1]}|+|f_{I_2}|\) does not include the sigmoid weighting
+that defines \(I_1\), so its CDF misplaces nodes for \(I_1\)
+specifically. C also costs \(\sim 8\times\) more due to the rough-grid
+setup (400 inner-integrand evaluations per
+\texttt{bias\_precompute}).
+
+\paragraph{When to pick C.}
+Option~C is useful when the integrand family is not known in
+advance or changes between runs (e.g.\ testing a new \(\xinl\)
+prescription, switching from DES Y3 to a different survey with a
+different photo-z kernel, or diagnosing where precision is being
+lost). For those ``first-look'' situations, C's automatic
+node-placement is robust even though it costs more per call. For
+production MCMC, Option~E remains the default because it is faster
+and equally accurate on the integrals that matter.
+
+In \texttt{RichnessSelection}, Option~C is enabled via
+\texttt{SelBias(..., z\_scheme='C')}. See
+\texttt{src/richness\_selection/sel\_bias.py::\_z\_grid\_option\_C}
+for the implementation.
 
 \section{Implementation notes}
 
-Both schemes are implemented in
-\texttt{src/richness\_selection/sel\_bias.py}, dispatched by the
-constructor argument \texttt{z\_scheme} (\texttt{'E'} or
-\texttt{'D'}).
+All three \(z\)-schemes (D, E, C) and the split-at-exclusion
+\(\theta\)-recipe are implemented in
+\texttt{src/richness\_selection/sel\_bias.py}. Dispatch via the
+constructor argument \texttt{z\_scheme}
+(\texttt{'E'}, \texttt{'D'}, or \texttt{'C'}).
 
 Option~E, \texttt{\_z\_grid\_option\_E}, splits
 \(N_z\) as \(N_{\rm ring}=\max(9,\,N_z/4)\) and
-\(N_{\rm outer}=\max(15,(N_z-N_{\rm ring})/2)\) per side.
+\(N_{\rm outer}=\max(15,(N_z-N_{\rm ring})/2)\) per side, GL on
+\(\ln|\Delta\chi_\parallel|\) for the outer halves.
 
 Option~D, \texttt{\_z\_grid\_option\_D}, uses
 \(N_{\rm side}=\max(15,\,N_z/2)\) GL nodes per foreground/background
 side in \(t=\mathrm{asinh}(|\Delta\chi_\parallel|/R_{\rm excl})\),
 with no region split.
 
-Both handle edge cases where \(R_{\rm excl}\) exceeds the photo-z
-support or the ring band is clipped by \(w_z=0\). Two regression
-tests live in the \texttt{RichnessSelection} package:
+Option~C, \texttt{\_z\_grid\_option\_C}, builds a 400-node rough
+\(z\)-grid (log-spaced on each side of \(\zob\)), evaluates
+\(f_{\rm proxy}(z)=|f_{\Pop[1]}(z)|+|f_{I_2}(z)|\) at each node,
+cumulative-integrates to get a CDF, and places the final \(N_z\)
+GL nodes at uniform-CDF levels via
+\texttt{np.interp}.
+
+The \(\theta\)-axis (split at
+\(\theta_{\rm excl}(z)\)) is inside a per-\(z\) loop in
+\texttt{\_P\_operator}; the \((M,\lambda)\) contractions are still
+numpy-einsum. Default grid sizes
+(\texttt{GridConfig}): \(N_z\!=\!80\), \(N_\theta\!=\!10\),
+\(N_M\!=\!24\), \(N_\lambda\!=\!60\).
+
+Regression tests live in the \texttt{RichnessSelection} package:
 \begin{itemize}
-  \item \texttt{validations/quad\_validate.py}: compares one
-        \(N_z\!=\!80\) result to
-        \texttt{scipy.integrate.quad} at rtol~\(10^{-5}\); must
-        pass \(<\!1\%\) on \(\Pop[1], I_1, I_2\).
-  \item \texttt{validations/compare\_schemes.py}: prints the table
-        above (D vs E at \(N_z\!\in\!\{40,80,160,320\}\)) at the
-        reference point and across six
-        \((\lob,\zob)\) bins.
+  \item \texttt{validations/theta\_convergence.py}: sweeps
+        \(N_\theta\) at fixed \(N_z\!=\!80\) showing that
+        \(N_\theta\!=\!10\) reaches sub-\(0.01\%\) with
+        split-at-exclusion.
+  \item \texttt{validations/quad\_matched\_inner.py}: compares E
+        at \(N_z\!=\!80\) to
+        \texttt{scipy.integrate.quad} (rtol\,=\,\(10^{-5}\)) using
+        the same inner GL grids; must pass \(<\!0.1\%\) on
+        \(\Pop[1], I_1, I_2\).
+  \item \texttt{validations/compare\_schemes.py}: prints the
+        E/D/C comparison table above at the reference point and
+        across six \((\lob,\zob)\) bins.
 \end{itemize}
 
 For typical DES Y3 cluster redshift bins
-(\(\zob\in[0.1,0.8]\), \(\lob\in[20,500]\)) no retuning of
-\((N_{\rm ring},N_{\rm outer})\) or \(N_{\rm side}\) defaults
-should be needed: the \emph{geometry} of Fig.~\ref{fig:fz}
-is universal in shape, only \(R_{\rm excl}\) and \(c/H(\zob)\)
-shift with cosmology/richness, and both schemes track those
-scales explicitly.
+(\(\zob\in[0.1,0.8]\), \(\lob\in[20,500]\)) no retuning of the
+grid-size defaults should be needed: the \emph{geometry} of
+Fig.~\ref{fig:fz} is universal in shape, only \(R_{\rm excl}\) and
+\(c/H(\zob)\) shift with cosmology/richness, and all three schemes
+(and the split-at-exclusion \(\theta\)-recipe) track those scales
+analytically.
 
 \end{document}

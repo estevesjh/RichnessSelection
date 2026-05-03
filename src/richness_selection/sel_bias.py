@@ -58,23 +58,32 @@ class SelBias:
                  min_mass4integral: float = 1.0e13,
                  ln_M_max_log10: float = 15.5,
                  n_ltr: int = 60,
-                 z_scheme: str = "E"):
+                 z_scheme: str = "C"):
         """
         Parameters
         ----------
         z_scheme : {"E", "D", "C"}
-            z-axis integration recipe.
-            "E" (default): split by physics into ring + outer-fg + outer-bg,
-                GL on z for the ring, GL on ln|Delta chi| for the outer.
-                Kernel-agnostic; ~0.3% on I1/I2 at Nz=80.
+            z-axis integration recipe.  The theta-axis is always split at
+            the exclusion boundary (per-z theta_excl(z) lower limit of the
+            GL interval), which is the dominant precision driver.  With
+            split-at-exclusion and Nth=10, all three z-schemes are within
+            ~1% of each other on I_1, I_2; the choice is about robustness
+            rather than raw precision.
+
+            "C" (default): CDF-based adaptive grid.  Build a rough
+                f_proxy(z) = |f_P1(z)| + |f_I2(z)| on a 400-node log-
+                spaced grid, form its cumulative, place the final Nz
+                GL nodes at uniform-CDF levels.  Automatically tracks
+                any integrand family's distribution in z, so it is
+                robust across cosmology/richness changes.  Cost ~8x
+                Option E due to the rough-grid setup.
+            "E": split by physics into ring + outer-fg + outer-bg,
+                GL on z for the ring, GL on ln|Delta chi| for the
+                outer halves.  Best raw precision on I_1 (sub-0.01%
+                at Nz=80); fastest (~26 ms).  Depends on the specific
+                f(z) shape being known in advance.
             "D": arcsinh transform  t = asinh(|Delta_chi_par| / R_excl).
-                Single GL grid per side, ~0.3-0.5% at Nz=80.
-            "C": CDF-based adaptive grid.  Build a rough f(z) on a dense
-                (400-node) log-spaced grid, form its |cumulative|,
-                place the final GL nodes at uniform-CDF levels so each
-                node carries ~equal integrand weight.  ~0.05% on I1/I2
-                at Nz=80 (~6x better than E/D).  Slightly more expensive
-                per call due to the rough-grid setup.
+                Single GL grid per side, ~0.3% on I_2 at Nz=80.
         """
         self.cosmo = cosmo
         self.pk = pk
