@@ -40,8 +40,8 @@ class SigmaPrj:
 
     def __init__(self, cosmo: Cosmology, sel_bias: SelBias,
                  nfw: NFWMiscentered,
-                 n_theta_inner: int = 50,
-                 n_theta_outer: int = 50):
+                 n_theta_inner: int = 10,
+                 n_theta_outer: int = 150):
         self.cosmo = cosmo
         self.sel_bias = sel_bias
         self.nfw = nfw
@@ -135,6 +135,18 @@ class SigmaPrj:
 
         out = np.zeros_like(R)
 
+        # Precompute a cubic-spline cache of b_sel_marginalised(theta) on a
+        # fixed dense log-theta grid covering the full support; later evaluations
+        # inside the (z, R) loops are O(1) spline lookups instead of ~100 ms
+        # marginalisation calls each.
+        from scipy.interpolate import CubicSpline
+        th_cache_lo, th_cache_hi = 1e-8, theta_max
+        th_cache = np.geomspace(th_cache_lo, th_cache_hi, 200)
+        bsel_cache = self.sel_bias.b_sel_marginalised(
+            th_cache, lob, zob, precomp=pre)
+        bsel_spline = CubicSpline(np.log(th_cache), bsel_cache,
+                                   extrapolate=False)
+
         # Outer loop over z (so per-z theta grid for exclusion + split-at-theta_R).
         for iz in range(zs.size):
             z = zs[iz]
@@ -143,7 +155,6 @@ class SigmaPrj:
             chi_z_i = chi_z[iz]
             dV_i = dV[iz]
             wz_i = wzs[iz]
-            # HMF and halo bias at this z
             n_mz = self.hmf(Ms, z)
             bM_mz = self.bias(Ms, z)
 
@@ -159,11 +170,11 @@ class SigmaPrj:
                 xi_vals = self.xi_NL(dchi, zob)
                 if self.sel_bias.exclusion:
                     xi_vals = np.where(dchi < R_excl, 0.0, xi_vals)
-                # b_sel(theta) at these theta nodes (marginalised over ltr)
-                bsel_th = self.sel_bias.b_sel_marginalised(
-                    ths, lob, zob, precomp=pre)
+                # b_sel(theta) from cached spline -- O(Nth) not O(Nth * n_ltr * ...)
+                bsel_th = bsel_spline(np.log(ths))
 
-                # Sigma_mis(R_val, R_theta, M, z) for all M, stacked (NM, Nth)
+                # Sigma_mis(R_val, R_theta, M, z): stacked per-M call to the
+                # spline (cheaper than M-vectorising the RectBivariateSpline).
                 S_mis = np.stack(
                     [self.nfw.sigma_grid(np.array([R_val]), R_theta,
                                           float(M), z).ravel()
@@ -172,11 +183,10 @@ class SigmaPrj:
                 # bracket (NM, Nth): 1 + b(M,z) bsel(theta) xi(z,theta)
                 bracket = 1.0 + bM_mz[:, None] * (bsel_th * xi_vals)[None, :]
 
-                # theta integral: sum_t wth_i * 2 pi sin_th_i * bracket * S_mis
-                th_weight = wth * 2.0 * np.pi * sin_th   # (Nth,)
-                # Mass integral: sum_M wM_M * n(M,z) * (theta integral)
+                # theta integral + M integral in one einsum
+                th_weight = wth * 2.0 * np.pi * sin_th
                 theta_contrib = np.einsum(
-                    't,Mt,Mt->M', th_weight, bracket, S_mis)     # (NM,)
+                    't,Mt,Mt->M', th_weight, bracket, S_mis)
                 out[iR] += (wz_i * dV_i * wz_kern[iz]
                             * np.sum(M_weight * n_mz * theta_contrib))
 
