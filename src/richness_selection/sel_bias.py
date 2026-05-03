@@ -57,33 +57,13 @@ class SelBias:
                  mor: MOR, xi_nl, grid: GridConfig = DEFAULT_GRID,
                  min_mass4integral: float = 1.0e13,
                  ln_M_max_log10: float = 15.5,
-                 n_ltr: int = 60,
-                 z_scheme: str = "C"):
-        """
-        Parameters
-        ----------
-        z_scheme : {"E", "D", "C"}
-            z-axis integration recipe.  The theta-axis is always split at
-            the exclusion boundary (per-z theta_excl(z) lower limit of the
-            GL interval), which is the dominant precision driver.  With
-            split-at-exclusion and Nth=10, all three z-schemes are within
-            ~1% of each other on I_1, I_2; the choice is about robustness
-            rather than raw precision.
-
-            "C" (default): CDF-based adaptive grid.  Build a rough
-                f_proxy(z) = |f_P1(z)| + |f_I2(z)| on a 400-node log-
-                spaced grid, form its cumulative, place the final Nz
-                GL nodes at uniform-CDF levels.  Automatically tracks
-                any integrand family's distribution in z, so it is
-                robust across cosmology/richness changes.  Cost ~8x
-                Option E due to the rough-grid setup.
-            "E": split by physics into ring + outer-fg + outer-bg,
-                GL on z for the ring, GL on ln|Delta chi| for the
-                outer halves.  Best raw precision on I_1 (sub-0.01%
-                at Nz=80); fastest (~26 ms).  Depends on the specific
-                f(z) shape being known in advance.
-            "D": arcsinh transform  t = asinh(|Delta_chi_par| / R_excl).
-                Single GL grid per side, ~0.3% on I_2 at Nz=80.
+                 n_ltr: int = 60):
+        """z-axis integration: split by physics into ring + outer-fg
+        + outer-bg, GL on z for the ring and GL on ln|Delta chi| for
+        the outer halves.  Sub-0.01% precision on P[1], I_1, I_2 at
+        Nz=80 in ~26 ms.  The theta-axis is always split at the
+        exclusion boundary (per-z theta_excl(z) lower limit of the GL
+        interval).
         """
         self.cosmo = cosmo
         self.pk = pk
@@ -95,7 +75,6 @@ class SelBias:
         self.min_mass4integral = min_mass4integral
         self.ln_M_max_log10 = ln_M_max_log10
         self.n_ltr = n_ltr
-        self.z_scheme = z_scheme
         self._cache: dict = {}
 
     # ---------------- small helpers -----------------------------------
@@ -137,12 +116,12 @@ class SelBias:
         self._cache[key] = val
         return val
 
-    # ---------------- z-grid schemes ----------------------------------
+    # ---------------- z-grid builder ----------------------------------
 
-    def _z_grid_option_E(self, lob, zob, Nz, chi_o, R_excl,
-                         z_fg_lo, z_bg_hi,
-                         zs_ref, chi_ref, dchi_dz_ref):
-        """Option E: split by physics into R1 (ring) + R2+R3 (outer fg+bg).
+    def _z_grid(self, lob, zob, Nz, chi_o, R_excl,
+                z_fg_lo, z_bg_hi,
+                zs_ref, chi_ref, dchi_dz_ref):
+        """Split the z-axis by physics: ring R1 + outer fg/bg (R2+R3).
 
         R1 [|z-zob| < dz_excl]:         GL in z, n_ring = max(9, Nz/4)
         R2+R3 outer regions per side:   GL in u = ln|Delta_chi_par|,
@@ -191,173 +170,6 @@ class SelBias:
         wzs = np.concatenate([w_fg_sort, w_ring, w_z_bg])
         return zs, wzs
 
-    def _rough_f_I2_proxy(self, lob, zob):
-        """Cheap scalar f(z) proxy for Option C's CDF-based adaptive grid.
-
-        Computes P[1]-integrand + I_2-integrand at each z.  The sum
-        captures both distributional features: P[1] peaks at z=zob
-        (smooth core, no xi spike), I_2 peaks at z=zob +/- dz_excl
-        (two peaks at exclusion boundary).  A CDF built on |P[1]+I_2|
-        places GL nodes around BOTH weight centres, so the resulting
-        grid is good for all three quantities (P[1], I_1, I_2).
-        """
-        g = self.grid
-        theta_lob = self._theta_lob(lob, zob)
-        chi_o = float(self.cosmo.chi(zob))
-        R_excl = R_lambda(lob) * (1.0 + zob)
-
-        ln_M_min = np.log(10.0 ** np.log10(self.min_mass4integral))
-        ln_M_max = np.log(10.0 ** self.ln_M_max_log10)
-        lnMs, wM = gl_nodes(ln_M_min, ln_M_max, g.NM)
-        Ms = np.exp(lnMs); M_weight = wM * Ms
-        lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)
-
-        theta_max_hi = 2.0 * theta_lob
-        eps_theta = 1e-6
-
-        def f_at_z(z):
-            """|f_P1(z)| + |f_I2(z)| using split-at-exclusion theta grid."""
-            chi_z = float(self.cosmo.chi(z))
-            dV = float(self.cosmo.dV_dzdOm(z))
-            wz_val = float(w_z(np.array([z]), zob)[0])
-            if wz_val <= 0:
-                return 0.0
-            # theta_excl(z) split -- matches _P_operator's theta grid choice
-            cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
-                2.0 * chi_z * chi_o + 1e-30)
-            cos_excl = min(max(cos_excl, -1.0), 1.0)
-            th_lo = np.arccos(cos_excl) if cos_excl < 1.0 - 1e-12 else eps_theta
-            th_lo = max(th_lo, eps_theta)
-            if th_lo >= theta_max_hi:
-                return 0.0
-            ths_z, wth_z = gl_nodes(th_lo, theta_max_hi, g.Nth)
-            sin_th_z = np.sin(ths_z)
-            th_weight_z = wth_z * 2.0 * np.pi * sin_th_z
-            cos_th_z = np.cos(ths_z)
-            dchi = np.sqrt(np.maximum(
-                chi_z ** 2 + chi_o ** 2 - 2 * chi_z * chi_o * cos_th_z, 0.0))
-            xi_th = self.xi_NL(dchi, zob)     # no mask; split already excludes
-            theta_lam_l = R_lambda(lam_grid) * (1.0 + z) / chi_z
-            fA = area_overlap(ths_z, theta_lob, theta_lam_l)
-            ang_P1 = np.einsum('t,tL->L', th_weight_z, fA)
-            ang_I2 = np.einsum('t,tL,t->L', th_weight_z, fA, xi_th)
-            P_lmz = self.mor.pdf(lam_grid[:, None], Ms[None, :], z)
-            rho_prefac = wz_val * lam_grid
-            lam_int_P1 = np.einsum('L,LM,L->M', wlam, P_lmz,
-                                    rho_prefac * ang_P1)
-            lam_int_I2 = np.einsum('L,LM,L->M', wlam, P_lmz,
-                                    rho_prefac * ang_I2)
-            n_m = self.hmf(Ms, z); b_m = self.bias(Ms, z)
-            f_P1 = dV * np.sum(M_weight * n_m * lam_int_P1)
-            f_I2 = dV * np.sum(M_weight * n_m * b_m * lam_int_I2)
-            return abs(f_P1) + abs(f_I2)
-
-        return f_at_z
-
-    def _z_grid_option_C(self, lob, zob, Nz, chi_o, R_excl,
-                         z_fg_lo, z_bg_hi,
-                         zs_ref, chi_ref, dchi_dz_ref):
-        """Option C: CDF-based adaptive z-grid.
-
-        1. Build a ~400-node rough z-grid (log-spaced in |z-zob| on each
-           side so the exclusion peak and ring are densely sampled).
-        2. Evaluate the real inner integrand f(z) (using I_2 as proxy)
-           on the rough grid.
-        3. Build the cumulative |f(z)| and normalise.
-        4. Place the final Nz GL nodes at uniform CDF levels; the weights
-           pick up a 1/(df/dz) Jacobian naturally.
-
-        The method gives roughly 6x precision per node compared to
-        fixed-grid Options E/D because nodes automatically cluster
-        around whichever features dominate the integral.  Extra cost:
-        one full rough-grid evaluation (~400 * inner-cost).
-        """
-        # Step 1: rough z-grid.  Log-spaced |z-zob| on each side.
-        # 200 per side (400 total) resolves the sharp ring peak
-        # reliably; smaller grids give unstable CDF inversion because
-        # the peak is smoothed too much.  Setup cost ~10x inner-integrand
-        # cost = ~200 ms per call at the reference point.
-        n_rough_half = max(200, Nz // 2)
-        dz_fg_max = zob - z_fg_lo
-        dz_bg_max = z_bg_hi - zob
-        eps_z = 1e-6
-        dz_fg = np.exp(np.linspace(np.log(eps_z), np.log(dz_fg_max),
-                                    n_rough_half))
-        dz_bg = np.exp(np.linspace(np.log(eps_z), np.log(dz_bg_max),
-                                    n_rough_half))
-        z_rough = np.sort(np.concatenate(
-            [zob - dz_fg, np.array([zob]), zob + dz_bg]))
-
-        # Step 2: evaluate rough proxy
-        f_at_z = self._rough_f_I2_proxy(lob, zob)
-        f_rough = np.array([f_at_z(z) for z in z_rough])
-
-        # Step 3: CDF of |f|
-        from scipy.integrate import cumulative_trapezoid
-        abs_f = np.abs(f_rough)
-        cdf_raw = cumulative_trapezoid(abs_f, z_rough, initial=0.0)
-        total = cdf_raw[-1]
-        if total <= 0:
-            # Degenerate case -- fall back to Option E
-            return self._z_grid_option_E(lob, zob, Nz, chi_o, R_excl,
-                                         z_fg_lo, z_bg_hi,
-                                         zs_ref, chi_ref, dchi_dz_ref)
-        cdf = cdf_raw / total
-
-        # Step 4: place final GL nodes at uniform CDF levels.
-        u_cdf, wu = gl_nodes(0.0, 1.0, Nz)
-        z_nodes = np.interp(u_cdf, cdf, z_rough)
-        # dz/du Jacobian = total/|f(z)|  (since F(z) = cdf_raw(z)/total
-        # and u = F(z), so dz/du = 1/(dF/dz) = total/|f|).
-        # The |f| MUST be evaluated at the SAME z_nodes where we'll
-        # compute the integrand later, so interpolate from rough curve.
-        f_at_nodes = np.interp(z_nodes, z_rough, abs_f)
-        # Guard against zero rows
-        f_at_nodes = np.maximum(f_at_nodes, 1e-30 * total)
-        dz_du = total / f_at_nodes
-        wzs = wu * dz_du
-        return z_nodes, wzs
-
-    def _z_grid_option_D(self, lob, zob, Nz, chi_o, R_excl,
-                         z_fg_lo, z_bg_hi,
-                         zs_ref, chi_ref, dchi_dz_ref):
-        """Option D: arcsinh transform (tailored to I1 / I2).
-
-        Change of variables  t = asinh(|Delta_chi_par| / R_excl)
-        maps both the ring plateau (small |Delta_chi_par|) and the
-        exclusion peak (Delta_chi_par = R_excl) into a smooth function
-        of t with bounded Jacobian  dd/dt = R_excl cosh(t).
-
-        Single GL grid per side (no region split), symmetric around
-        zob.  Half of Nz per side.
-        """
-        n_side = max(15, Nz // 2)
-        dis_fg_max = chi_o - float(self.cosmo.chi(z_fg_lo))
-        dis_bg_max = float(self.cosmo.chi(z_bg_hi)) - chi_o
-        t_fg_max = float(np.arcsinh(dis_fg_max / R_excl))
-        t_bg_max = float(np.arcsinh(dis_bg_max / R_excl))
-
-        # Foreground:  t in [0, t_fg_max];  d = R_excl sinh(t), z_fg = z at chi_o - d
-        t_fg, w_t_fg = gl_nodes(0.0, t_fg_max, n_side)
-        dis_fg = R_excl * np.sinh(t_fg)
-        z_fg = np.interp(chi_o - dis_fg, chi_ref, zs_ref)
-        dchi_dz_fg = np.interp(z_fg, zs_ref, dchi_dz_ref)
-        # dz/dt = (dd/dt) / (dchi/dz) = R_excl cosh(t) / (c/H(z))
-        dz_dt_fg = R_excl * np.cosh(t_fg) / dchi_dz_fg
-        w_z_fg = w_t_fg * dz_dt_fg
-
-        # Background
-        t_bg, w_t_bg = gl_nodes(0.0, t_bg_max, n_side)
-        dis_bg = R_excl * np.sinh(t_bg)
-        z_bg = np.interp(chi_o + dis_bg, chi_ref, zs_ref)
-        dchi_dz_bg = np.interp(z_bg, zs_ref, dchi_dz_ref)
-        dz_dt_bg = R_excl * np.cosh(t_bg) / dchi_dz_bg
-        w_z_bg = w_t_bg * dz_dt_bg
-
-        # Assemble (foreground ascending in z, then background)
-        zs = np.concatenate([z_fg[::-1], z_bg])
-        wzs = np.concatenate([w_z_fg[::-1], w_z_bg])
-        return zs, wzs
 
     # ---------------- Operator P[X] (eq. 9) ---------------------------
     #
@@ -394,30 +206,16 @@ class SelBias:
         chi_fg_lo = float(self.cosmo.chi(z_fg_lo))
         chi_bg_hi = float(self.cosmo.chi(z_bg_hi))
 
-        # Build the z grid + weights via the chosen scheme.
+        # Build the z grid + weights (ring + outer-fg + outer-bg split).
         R_excl = R_lambda(lob) * (1.0 + zob)
         zs_ref = np.linspace(0.0, 2.0, 2000)
         chi_ref = self.cosmo.chi(zs_ref)
         dchi_dz_ref = np.gradient(chi_ref, zs_ref)
 
-        if self.z_scheme == "E":
-            zs, wzs = self._z_grid_option_E(lob, zob, g.Nz,
-                                            chi_o, R_excl,
-                                            z_fg_lo, z_bg_hi,
-                                            zs_ref, chi_ref, dchi_dz_ref)
-        elif self.z_scheme == "D":
-            zs, wzs = self._z_grid_option_D(lob, zob, g.Nz,
-                                            chi_o, R_excl,
-                                            z_fg_lo, z_bg_hi,
-                                            zs_ref, chi_ref, dchi_dz_ref)
-        elif self.z_scheme == "C":
-            zs, wzs = self._z_grid_option_C(lob, zob, g.Nz,
-                                            chi_o, R_excl,
-                                            z_fg_lo, z_bg_hi,
-                                            zs_ref, chi_ref, dchi_dz_ref)
-        else:
-            raise ValueError(f"Unknown z_scheme={self.z_scheme!r}; "
-                             "expected 'E', 'D', or 'C'")
+        zs, wzs = self._z_grid(lob, zob, g.Nz,
+                               chi_o, R_excl,
+                               z_fg_lo, z_bg_hi,
+                               zs_ref, chi_ref, dchi_dz_ref)
 
         chi_z = self.cosmo.chi(zs)
         dV = self.cosmo.dV_dzdOm(zs)

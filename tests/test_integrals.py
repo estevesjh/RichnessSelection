@@ -3,10 +3,9 @@
 Each test validates one of the numerical recipes we rely on:
 
   1. sel_bias theta split-at-exclusion: Nth=10 converged to <0.1% of quad.
-  2. sel_bias z-schemes E/D/C agree within 1% at Nz=80.
-  3. Lambda axis converged: n_ltr=30 matches n_ltr=100 to <0.01%.
-  4. Sigma_prj theta split-at-theta_R: log-GL 50+50 within ~3% of quad.
-  5. Sigma_prj monotonicity: profile is smooth after R_peak ~ 0.5 cMpc/h.
+  2. Lambda axis converged: n_ltr=30 matches n_ltr=100 to <0.01%.
+  3. Sigma_prj theta split-at-theta_R: log-GL 50+50 within ~3% of quad.
+  4. Sigma_prj monotonicity: profile is smooth after R_peak ~ 0.5 cMpc/h.
 
 These tests share a session-level fixture (cosmo + CAMB) to avoid the
 ~1 s CAMB startup for every test.
@@ -44,11 +43,11 @@ def _stack(cosmo):
     return dict(pk=pk, sm=sm, hmf=hmf, bias=bias, mor=mor, xi=xi)
 
 
-def _make_sb(cosmo, stack, scheme='E', Nz=80, Nth=10, n_ltr=60):
+def _make_sb(cosmo, stack, Nz=80, Nth=10, n_ltr=60):
     return SelBias(cosmo, stack['pk'], stack['hmf'], stack['bias'],
                    stack['mor'], xi_nl=stack['xi'],
                    grid=GridConfig(Nz=Nz, Nth=Nth),
-                   n_ltr=n_ltr, z_scheme=scheme)
+                   n_ltr=n_ltr)
 
 
 # ---------- Shared quad-reference utilities ------------------------------
@@ -138,7 +137,7 @@ class TestSelBiasThetaSplit:
     """Test 1: split-at-exclusion converges at Nth=10 to < 0.1% of quad."""
 
     def test_Nth10_sub_01pct(self, cosmo, _stack, quad_truth):
-        sb = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10)
+        sb = _make_sb(cosmo, _stack, Nz=80, Nth=10)
         pre = sb.bias_precompute(20.0, 0.5)
         for key in ('P1', 'I2', 'I1'):
             rel_err = abs(pre[key] / quad_truth[key] - 1.0)
@@ -147,9 +146,9 @@ class TestSelBiasThetaSplit:
                 f'rel_err={rel_err*100:.3f}% (expect < 0.1%)')
 
     def test_Nth_converged_Nth15_to_5_digits(self, cosmo, _stack):
-        sb10 = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10)
-        sb15 = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=15)
-        sb50 = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=50)
+        sb10 = _make_sb(cosmo, _stack, Nz=80, Nth=10)
+        sb15 = _make_sb(cosmo, _stack, Nz=80, Nth=15)
+        sb50 = _make_sb(cosmo, _stack, Nz=80, Nth=50)
         p10 = sb10.bias_precompute(20.0, 0.5)
         p15 = sb15.bias_precompute(20.0, 0.5)
         p50 = sb50.bias_precompute(20.0, 0.5)
@@ -161,28 +160,12 @@ class TestSelBiasThetaSplit:
                 f'diff={diff*100:.4f}% (expect < 0.01%)')
 
 
-class TestSelBiasZSchemes:
-    """Test 2: E/D/C agree within 1% at Nz=80, Nth=10."""
-
-    @pytest.mark.parametrize('key', ['P1', 'I2', 'I1'])
-    def test_schemes_agree(self, cosmo, _stack, key):
-        sb_E = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10)
-        sb_D = _make_sb(cosmo, _stack, scheme='D', Nz=80, Nth=10)
-        pE = sb_E.bias_precompute(20.0, 0.5)
-        pD = sb_D.bias_precompute(20.0, 0.5)
-        # E and D agree to ~1% on I1/I2 (D is slightly worse at Nz=80).
-        # Tight 0.3% tolerance for P1 where both schemes are strong.
-        tol = 3e-3 if key == 'P1' else 1.0e-2
-        assert abs(pE[key] / pD[key] - 1.0) < tol, (
-            f'{key}: E {pE[key]:.5e}, D {pD[key]:.5e}')
-
-
 class TestLambdaAxisConverged:
-    """Test 3: lambda axis already converged at n_ltr=30."""
+    """Test 2: lambda axis already converged at n_ltr=30."""
 
     def test_lam_converged(self, cosmo, _stack):
-        sb30 = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10, n_ltr=30)
-        sb100 = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10, n_ltr=100)
+        sb30 = _make_sb(cosmo, _stack, Nz=80, Nth=10, n_ltr=30)
+        sb100 = _make_sb(cosmo, _stack, Nz=80, Nth=10, n_ltr=100)
         p30 = sb30.bias_precompute(20.0, 0.5)
         p100 = sb100.bias_precompute(20.0, 0.5)
         for key in ('P1', 'I2', 'I1'):
@@ -193,11 +176,11 @@ class TestLambdaAxisConverged:
 
 
 class TestSigmaPrjTheta:
-    """Tests 4 and 5: Sigma_prj split-at-theta_R + monotonicity."""
+    """Tests 3 and 4: Sigma_prj split-at-theta_R + monotonicity."""
 
     @pytest.fixture(scope="class")
     def sigma_prj_obj(self, cosmo, _stack):
-        sb = _make_sb(cosmo, _stack, scheme='E', Nz=80, Nth=10)
+        sb = _make_sb(cosmo, _stack, Nz=80, Nth=10)
         nfw = NFWMiscentered(cosmo)
         return SigmaPrj(cosmo, sb, nfw, n_theta_inner=50, n_theta_outer=50)
 

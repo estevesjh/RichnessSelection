@@ -28,7 +28,7 @@ def main():
 
     # High-precision reference (Nz=200, Nth=50, Option E split-at-exclusion)
     sb_ref = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi,
-                     grid=GridConfig(Nz=200, Nth=50), z_scheme='E')
+                     grid=GridConfig(Nz=200, Nth=50))
     pre_ref = sb_ref.bias_precompute(20.0, 0.5)
     P1r = pre_ref['P1']; I2r = pre_ref['I2']; I1r = pre_ref['I1']
     print(f'Reference at (lob=20, zob=0.5), Nz=200, Nth=50, split-at-exclusion:')
@@ -41,7 +41,7 @@ def main():
     print(f'  {"Nth":>4}  {"P1 err":>9} {"I2 err":>9} {"I1 err":>9}  {"time":>8}')
     for Nth in (5, 8, 10, 15, 20, 30, 50):
         g = GridConfig(Nz=80, Nth=Nth)
-        sb = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi, grid=g, z_scheme='E')
+        sb = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi, grid=g)
         sb.bias_precompute(20., 0.5); sb._cache.clear()
         best = float('inf')
         for _ in range(3):

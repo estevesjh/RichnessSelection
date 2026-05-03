@@ -102,19 +102,12 @@ print(f'  P1: {(truth_matched["P1"]/1.997627 - 1)*100:+.3f}%')
 print(f'  I2: {(truth_matched["I2"]/3.696605e-1 - 1)*100:+.3f}%')
 print(f'  I1: {(truth_matched["I1"]/2.493808e-1 - 1)*100:+.3f}%')
 
-# Now compare our SelBias E and D schemes to the *matched* quad
-sb_E = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi,
-               grid=g, z_scheme='E')
-sb_D = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi,
-               grid=g, z_scheme='D')
-pE = sb_E.bias_precompute(lob, zob)
-pD = sb_D.bias_precompute(lob, zob)
+# Now compare our SelBias to the *matched* quad
+sb = SelBias(cosmo, pk, hmf, bias, mor, xi_nl=xi, grid=g)
+pE = sb.bias_precompute(lob, zob)
 
 print()
 print('Our SelBias at Nz=80 vs matched-inner quad (should be <0.5% z-axis error):')
-print(f'  P1 err E: {(pE["P1"]/truth_matched["P1"] - 1)*100:+.3f}%  '
-      f'D: {(pD["P1"]/truth_matched["P1"] - 1)*100:+.3f}%')
-print(f'  I2 err E: {(pE["I2"]/truth_matched["I2"] - 1)*100:+.3f}%  '
-      f'D: {(pD["I2"]/truth_matched["I2"] - 1)*100:+.3f}%')
-print(f'  I1 err E: {(pE["I1"]/truth_matched["I1"] - 1)*100:+.3f}%  '
-      f'D: {(pD["I1"]/truth_matched["I1"] - 1)*100:+.3f}%')
+print(f'  P1: {(pE["P1"]/truth_matched["P1"] - 1)*100:+.3f}%')
+print(f'  I2: {(pE["I2"]/truth_matched["I2"] - 1)*100:+.3f}%')
+print(f'  I1: {(pE["I1"]/truth_matched["I1"] - 1)*100:+.3f}%')

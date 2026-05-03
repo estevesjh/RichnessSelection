@@ -7,10 +7,10 @@ Evaluates Costanzi 2026 Eq.~13:
                                     [1 + b(M,z) b_sel(theta) xi_NL(z,theta)]
                                   * Sigma_mis(R | M, z, theta, zob)
 
-Key numerical choices (documented in docs/z_integral_recipe.tex):
+Key numerical choices (documented in docs/richness_selection.tex):
 
-- z-axis: sel_bias._z_grid_option_{E,D,C} dispatch, default Option C.
-  (Inherits the same z-grid selection the sel_bias operator uses.)
+- z-axis: sel_bias._z_grid builds the ring + outer-fg + outer-bg GL
+  grid.  (Inherits the same z-grid sel_bias's _P_operator uses.)
 - theta-axis: SPLIT at theta_R = R / D_A(zob), the location of the
   NFW peak Sigma_mis(R, R_theta = R).  Log-GL on [eps, theta_R] and
   [theta_R, theta_max].  This mirrors the split-at-exclusion trick
@@ -83,7 +83,7 @@ class SigmaPrj:
         g = self.grid
         R = np.atleast_1d(R).astype(float)
 
-        # Build the SAME z-grid that sel_bias uses (inherits z_scheme choice).
+        # Build the SAME z-grid that sel_bias uses.
         chi_o = float(self.cosmo.chi(zob))
         D_A_o = chi_o / (1.0 + zob)
         R_excl = R_lambda(lob) * (1.0 + zob)
@@ -102,19 +102,9 @@ class SigmaPrj:
         chi_ref = self.cosmo.chi(zs_ref)
         dchi_dz_ref = np.gradient(chi_ref, zs_ref)
 
-        scheme = getattr(self.sel_bias, 'z_scheme', 'E')
-        if scheme == 'E':
-            zs, wzs = self.sel_bias._z_grid_option_E(
-                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
-                zs_ref, chi_ref, dchi_dz_ref)
-        elif scheme == 'D':
-            zs, wzs = self.sel_bias._z_grid_option_D(
-                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
-                zs_ref, chi_ref, dchi_dz_ref)
-        else:  # C
-            zs, wzs = self.sel_bias._z_grid_option_C(
-                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
-                zs_ref, chi_ref, dchi_dz_ref)
+        zs, wzs = self.sel_bias._z_grid(
+            lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
+            zs_ref, chi_ref, dchi_dz_ref)
 
         chi_z = self.cosmo.chi(zs)
         dV = self.cosmo.dV_dzdOm(zs)

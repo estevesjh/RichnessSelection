@@ -30,7 +30,7 @@ class MOR:
                  alpha: float = 0.858693714,
                  log10_M1: float = 12.6964410,
                  sigma_intr: float = 0.180949022,
-                 epsilon: float = 0.283887020,
+                 epsilon: float = 0.0,
                  z_pivot: float = 0.4544):
         self.M_min = 10.0 ** log10_Mmin
         self.M1 = 10.0 ** log10_M1
@@ -52,6 +52,19 @@ class MOR:
 
     def sig_intr(self, M, z):
         return self.sigma_intr * self.l_sat(M, z)
+
+    # Effective first / second moments of P(ltr | M, z) used to
+    # bracket the GL quadrature in selection_function.S_i.
+    def ltr_mean(self, M, z):
+        """Effective mean of the shifted Poisson; to leading order
+        this is l_sat.  Added for a uniform MOR API shared with
+        LogNormalMOR."""
+        return self.l_sat(M, z)
+
+    def ltr_sigma(self, M, z):
+        """Effective sigma: sqrt(l_sat + (sigma_intr * l_sat)^2)."""
+        m = self.l_sat(M, z)
+        return np.sqrt(m + (m * self.sigma_intr) ** 2)
 
     def pdf(self, ltr, M, z):
         """P(ltr | M, z) via Poisson-Gaussian convolution.  Broadcast-safe
@@ -92,3 +105,76 @@ class MOR:
     # Alias used by tests + old code
     def mean_lambda_below(self, M, z, lob):
         return self.lambda_mean_below(M, z, lob)
+
+
+class LogNormalMOR:
+    """Log-normal mass-observable relation (Costanzi 2021 Eq. 2).
+
+    Parametrises the mean of ln(lambda) as a linear combination of
+    ln(M/Mp) and ln((1+z)/(1+zp)); scatter is log-normal with the
+    Costanzi-2021 variance
+
+        sigma^2_ln(lambda) = D^2 + (<lambda> - 1) / <lambda>^2,
+
+    where the second term is the Poisson-like contribution from
+    discrete galaxy counts.
+
+    Default parameters are the Costanzi 2021 DES+SPT best fit (their
+    Tab. 2): pivot mass Mp = 3e14 h^-1 Msun, pivot redshift zp=0.45.
+    """
+
+    def __init__(self,
+                 A_lambda: float = 76.9,
+                 B_lambda: float = 1.020,
+                 C_lambda: float = 0.29,
+                 D_lambda: float = 0.23,
+                 M_pivot: float = 3.0e14,
+                 z_pivot: float = 0.45):
+        self.A_lambda = A_lambda
+        self.B_lambda = B_lambda
+        self.C_lambda = C_lambda
+        self.D_lambda = D_lambda
+        self.M_pivot = M_pivot
+        self.z_pivot = z_pivot
+
+    def ln_lambda_mean(self, M, z):
+        """<ln lambda>(M, z), Eq. (34) of the doc."""
+        M = np.asarray(M, dtype=float)
+        z = np.asarray(z, dtype=float)
+        return (np.log(self.A_lambda)
+                + self.B_lambda * np.log(M / self.M_pivot)
+                + self.C_lambda * np.log((1.0 + z) / (1.0 + self.z_pivot)))
+
+    def _sigma_ln_lambda(self, M, z):
+        """sigma_ln_lambda(M, z) from Eq. (35)."""
+        lam_lin = np.exp(self.ln_lambda_mean(M, z))
+        # Guard against lam < 1 (the Poisson-like term would flip sign).
+        lam_lin = np.maximum(lam_lin, 1.0 + 1e-12)
+        var = self.D_lambda ** 2 + (lam_lin - 1.0) / lam_lin ** 2
+        return np.sqrt(var)
+
+    def ltr_mean(self, M, z):
+        """Linear-space mean <lambda>(M, z) = exp(mu + sig^2/2)."""
+        mu = self.ln_lambda_mean(M, z)
+        s2 = self._sigma_ln_lambda(M, z) ** 2
+        return np.exp(mu + 0.5 * s2)
+
+    def ltr_sigma(self, M, z):
+        """Linear-space scatter sigma_lambda = <lambda> sqrt(exp(sig^2) - 1)."""
+        s2 = self._sigma_ln_lambda(M, z) ** 2
+        return self.ltr_mean(M, z) * np.sqrt(np.expm1(s2))
+
+    def pdf(self, ltr, M, z):
+        """P(ltr | M, z) log-normal density, Eq. (36)."""
+        ltr = np.asarray(ltr, dtype=float)
+        mu_ln = self.ln_lambda_mean(M, z)
+        sig_ln = self._sigma_ln_lambda(M, z)
+        # 0 for ltr <= 0, else (1 / (ltr sigma sqrt(2 pi))) exp(-(...)^2/2)
+        val = np.where(
+            ltr > 0.0,
+            np.exp(-0.5 * ((np.log(np.clip(ltr, 1e-300, None)) - mu_ln)
+                            / sig_ln) ** 2)
+            / (np.clip(ltr, 1e-300, None) * sig_ln * np.sqrt(2.0 * np.pi)),
+            0.0,
+        )
+        return val

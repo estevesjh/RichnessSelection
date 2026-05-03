@@ -1,0 +1,578 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[
+  left = 20mm, right = 20mm, top = 22mm, bottom = 22mm,
+]{geometry}
+
+\usepackage{amsmath,amsfonts,amssymb,bm}
+\usepackage[english]{babel}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{orcidlink}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+
+\definecolor{harvardcrimson}{HTML}{8C1D40}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=harvardcrimson,
+  citecolor=harvardcrimson,
+  urlcolor=harvardcrimson,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{harvardcrimson}{\textbf{\texttt{RichnessSelection}: selection function}}}
+\lhead{\textcolor{harvardcrimson}{\textbf{J.\,H.\,Esteves}}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+\renewcommand{\baselinestretch}{1.15}
+
+\newcommand{\ltr}{\lambda^{\rm tr}}
+\newcommand{\lob}{\lambda^{\rm ob}}
+\newcommand{\ztr}{z^{\rm tr}}
+\newcommand{\zob}{z^{\rm ob}}
+\newcommand{\redmapper}{\textsc{redMaPPer}}
+
+\title{\textcolor{harvardcrimson}{\textbf{A closed-form richness selection function\\
+for optical cluster cosmology with projection effects}}}
+\author{Johnny H.\ Esteves\,\orcidlink{0000-0003-4373-2386}\\[2pt]
+{\small Department of Physics, Harvard University}}
+\date{April 30, 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+Forward-model analyses of optically selected galaxy-cluster samples compare the observed abundance in joint bins of observed richness $\lob$ and observed (photometric) redshift $\zob$ against a cosmology-dependent prediction. The observed richness is a noisy estimator of the true halo galaxy content: photometric scatter and \emph{projection effects} --- line-of-sight structures contaminating the cluster member list --- introduce a non-Gaussian tail in the $\lob$--$\ltr$ relation that must be captured by the richness kernel $P(\lob\mid\ltr,\ztr)$ \citep[see e.g.][]{Costanzi2019proj,Costanzi2021,Costanzi2026}. In the DES Y3 pipeline \citep{Y3CosmoSISPlans}, the expected number of clusters in the $i$-th richness bin $\Delta\lambda_i\equiv[\lambda_i^{\min},\lambda_i^{\max}]$ and $j$-th redshift bin $\Delta z_j\equiv[z_j^{\min},z_j^{\max}]$ is written as
+\begin{equation}
+\langle N_{ij}\rangle
+=
+\int\! dM \int\! d\ztr\;
+\Omega(\ztr)\,\frac{dV}{d\Omega\,d\ztr}\,n(M,\ztr)
+\int\! d\ltr\,
+P(\ltr\mid M,\ztr)\,
+\mathcal K_{ij}(\ltr,\ztr),
+\label{eq:Nij}
+\end{equation}
+where $n(M,\ztr)=dn/dM$ is the halo mass function, $dV/(d\Omega\,d\ztr)$ is the comoving volume element, $\Omega(\ztr)$ is the effective survey solid angle, $P(\ltr\mid M,\ztr)$ is the mass--richness relation, and the \emph{\redmapper\ selection function}
+\begin{equation}
+\mathcal K_{ij}(\ltr,\ztr)
+\equiv
+\int_{\Delta\lambda_i}\! d\lob\,
+\int_{\Delta z_j}\! d\zob\,
+P(\lob\mid \ltr,\ztr)\,
+P(\zob\mid \ztr,\Delta\lambda_i)
+\label{eq:Kij_def}
+\end{equation}
+is the joint probability that a halo of latent properties $(\ltr,\ztr)$ is scattered into the $(i,j)$ bin. Because the photo-$z$ kernel $P(\zob\mid\ztr,\Delta\lambda_i)$ is well approximated by a Gaussian in the DES Y3 analysis \citep[Eq.~66 of][]{Y3CosmoSISPlans}, the $\zob$ integral factorises into a difference of normal CDFs, and $\mathcal K_{ij}$ separates into an observed-richness kernel $\mathcal K_i$ times an observed-redshift kernel $\mathcal K_j$:
+\begin{equation}
+\mathcal K_{ij}(\ltr,\ztr) = \mathcal K_i(\ltr,\ztr)\,\mathcal K_j(\ztr),
+\qquad
+\mathcal K_j(\ztr) =
+\left.\Phi\!\left(\frac{\zob-\ztr}{\sigma_z}\right)\right|_{\Delta z_j},
+\label{eq:Kij_split}
+\end{equation}
+with $\sigma_z\equiv\sigma_z(\Delta\lambda_i)$ the photo-$z$ scatter (generally bin-dependent) and the evaluation bar defined in the usual definite-integral sense.
+
+The number counts $\langle N_{ij}\rangle$ (Eq.~\eqref{eq:Nij}) is a five dimension integral over $(M,\ztr,\ltr,\lob,\zob)$. The aim of this note is to reduce it to a 2D integral over $(M,\ztr)$ only: the $\zob$ integral gives the Gaussian CDF of Eq.~\eqref{eq:Kij_split}, and, as we show below, the $\lob$ integral of the Costanzi projection kernel can be carried out analytically as well, leaving the $\ltr$ integral to be evaluated by a fast Gauss--Legendre rule. In the following section we will derive the non-trivial factor $\mathcal K_i$ --- the richness kernel with Costanzi projection effects --- in closed form.
+
+\section{Richness-binned mass selection}
+
+We focus on the richness piece of Eq.~\eqref{eq:Kij_def}: the probability that a halo of mass $M$ at true redshift $\ztr$ is observed with richness $\lob$ inside $\Delta\lambda_i$. We call this the \emph{richness selection function},
+\begin{equation}
+S_i(M,\ztr)
+\equiv
+\mathrm{Pr}\!\left(\lob \in \Delta\lambda_i \,\middle|\, M,\ztr\right),
+\label{eq:Pi_def}
+\end{equation}
+i.e.\ the fraction of halos at $(M,\ztr)$ that are scattered into the $i$-th richness bin by the observational kernel. Marginalising over the latent (true) richness $\ltr$, the full expression reads
+\begin{equation}
+S_i(M,\ztr)
+=
+\int_{\lambda_i^{\min}}^{\lambda_i^{\max}} d\lob
+\int_0^\infty d\ltr\,
+P(\lob\mid \ltr,\ztr)\,
+P(\ltr\mid M,\ztr).
+\label{eq:full_integral}
+\end{equation}
+Here $P(\lob\mid\ltr,\ztr)$ is the observational kernel that maps the intrinsic richness to the measured one (including measurement noise and projection effects), while $P(\ltr\mid M,\ztr)$ is the mass--richness relation that encodes how halos of mass $M$ at redshift $\ztr$ populate values of $\ltr$. The outer integral restricts $\lob$ to the bin, and the inner one sums over all possible intrinsic richnesses compatible with a given halo.
+
+The strategy is to perform the $\lob$ integral analytically so that only a 1D integral over $\ltr$ remains. To that end we define the bin-integrated observational kernel
+\begin{equation}
+\mathcal K_i(\ltr,\ztr)
+\equiv
+\int_{\lambda_i^{\min}}^{\lambda_i^{\max}}
+d\lob\,
+P(\lob\mid \ltr,\ztr),
+\label{eq:Ki_def}
+\end{equation}
+so that $\mathcal K_i$ represents the probability, at fixed $\ltr$, of being scattered into $\Delta\lambda_i$ --- exactly the richness factor of Eq.~\eqref{eq:Kij_split}. The selection function then becomes
+\begin{equation}
+S_i(M,\ztr)
+=
+\int_0^\infty d\ltr\,
+\mathcal K_i(\ltr,\ztr)\,
+P(\ltr\mid M,\ztr),
+\label{eq:Pi_reduced}
+\end{equation}
+which is a 1D integral against the mass--richness PDF. The remaining task is therefore to compute $\mathcal K_i$ in closed form.
+
+\section{Closed-form of the observed richness kernel with projection effects}
+
+\subsection{Costanzi projection kernel $P(\lob\mid\ltr,z)$}
+
+We adopt the observational kernel introduced in \citet{Costanzi2019proj} (Eqs.~3, 5, 6) and re-used unchanged in \citet{Costanzi2019cosmo} and \citet{Costanzi2021}. Its derivation starts from the additive decomposition
+\begin{equation}
+\lob = \ltr + \Delta^{\rm bkg} + \Delta^{\rm prj},
+\label{eq:lob_decomposition}
+\end{equation}
+where $\Delta^{\rm bkg}$ is a Gaussian background/measurement fluctuation,
+\begin{equation}
+\Delta^{\rm bkg}\sim\mathcal N(\Delta\mu,\sigma^2),
+\label{eq:bkg_gaussian}
+\end{equation}
+and $\Delta^{\rm prj}\ge 0$ is a one-sided projection boost modelled as a spike at zero plus an exponential tail,
+\begin{equation}
+P\!\left(\Delta^{\rm prj}\mid\ltr,z\right)
+=
+(1-f^{\rm prj})\,\delta_{\rm D}(\Delta^{\rm prj})
++
+f^{\rm prj}\,\tau\,e^{-\tau\,\Delta^{\rm prj}}\,\Theta(\Delta^{\rm prj}),
+\label{eq:prj_spike_tail}
+\end{equation}
+with $\delta_{\rm D}$ the Dirac delta and $\Theta$ the Heaviside step function. Convolving the Gaussian noise $\Delta^{\rm bkg}$ with the projection boost $\Delta^{\rm prj}$ produces a classic \emph{exponentially modified Gaussian} (EMG) distribution --- i.e.\ the law of a sum $X=G+E$ with $G\sim\mathcal N$ and $E\sim\mathrm{Exp}$. The EMG is often called \emph{ex-Gaussian} and it is the standard model for a Gaussian core plus a one-sided exponential tail (see e.g.\ \citealt{Grushka1972}). Using this convolution, Eqs.~\eqref{eq:bkg_gaussian} and \eqref{eq:prj_spike_tail} give the EMG richness kernel
+\begin{equation}
+\begin{aligned}
+P(\lob\mid \ltr,z)
+&=
+(1-f^{\rm prj})\,\mathcal N\!\left(\lob;\,\mu,\sigma\right) \\
+&\quad
++
+f^{\rm prj}\,
+\frac{\tau}{2}
+\exp\!\left[
+\frac{\tau}{2}\left(2\mu+\tau\sigma^{2}-2\lob\right)
+\right]
+\operatorname{erfc}\!\left(
+\frac{\mu+\tau\sigma^{2}-\lob}{\sqrt{2}\,\sigma}
+\right),
+\end{aligned}
+\label{eq:costanzi_kernel}
+\end{equation}
+with
+\begin{equation}
+\mu \equiv \ltr + \Delta\mu.
+\label{eq:mu_def}
+\end{equation}
+The four kernel parameters $\{\Delta\mu,\sigma,f^{\rm prj},\tau\}$ all depend on $(\ltr,z)$ and are calibrated empirically (\citealt{Costanzi2019proj} use synthetic-cluster injections in SDSS). Their meanings are:
+\begin{itemize}
+\item $\Delta\mu(\ltr,z)$ --- mean bias of the background/measurement Gaussian; typically $\Delta\mu<0$ because redMaPPer's global background subtraction biases $\lob$ low.
+\item $\sigma(\ltr,z)$ --- Gaussian width combining photometric noise and uncorrelated background fluctuations.
+\item $f^{\rm prj}(\ltr,z)\in[0,1]$ --- fraction of clusters affected by a projection boost (line-of-sight overlap with other haloes); increases with $\ltr$ and $z$.
+\item $\tau(\ltr,z)>0$ --- inverse scale of the exponential projection tail: smaller $\tau$ means longer tails and therefore stronger projections.
+\end{itemize}
+The first line of Eq.~\eqref{eq:costanzi_kernel} is therefore the ``background'' (BKG-only) limit recovered when $f^{\rm prj}=0$, corresponding to a pure Gaussian $P_{\rm bkg}(\lob\mid\ltr)$ as used in \citet{Costanzi2021}. The second line is the EMG projection (PRJ) contribution; in \citet{Costanzi2021} this term also absorbs residual masking/percolation effects. Note that the kernel is \emph{not} normalised to unity over $\lob\in\mathbb R$ for $f^{\rm prj}>0$ only because $\Delta^{\rm prj}\ge 0$; the total probability is conserved by construction through Eqs.~\eqref{eq:bkg_gaussian}--\eqref{eq:prj_spike_tail}.
+
+\subsection{Splitting $\mathcal K_i$ into Gaussian and EMG pieces}
+
+Inserting Eq.~\eqref{eq:costanzi_kernel} into Eq.~\eqref{eq:Ki_def} and exchanging the sum with the bin integral yields
+\begin{equation}
+\mathcal K_i(\ltr,z)
+=
+(1-f^{\rm prj})\,\mathcal K_i^{\rm G}
++
+f^{\rm prj}\,\mathcal K_i^{\rm EMG},
+\label{eq:Ki_split}
+\end{equation}
+where $\mathcal K_i^{\rm G}$ and $\mathcal K_i^{\rm EMG}$ are the Gaussian and EMG contributions,
+\begin{equation}
+\mathcal K_i^{\rm G}
+=
+\int_{\lambda_i^{\min}}^{\lambda_i^{\max}}
+d\lob\,
+\mathcal N(\lob;\mu,\sigma),
+\end{equation}
+and
+\begin{equation}
+\mathcal K_i^{\rm EMG}
+=
+\int_{\lambda_i^{\min}}^{\lambda_i^{\max}}
+d\lob\,
+\frac{\tau}{2}
+\exp\!\left[
+\frac{\tau}{2}\left(2\mu+\tau\sigma^2-2\lob\right)
+\right]
+\operatorname{erfc}\!\left(
+\frac{\mu+\tau\sigma^2-\lob}{\sqrt{2}\,\sigma}
+\right).
+\end{equation}
+Each piece can now be integrated analytically.
+
+\subsection{Gaussian piece: from CDF to bin edges}
+
+The Gaussian term is immediate, since it is the integral of a normal PDF between two limits:
+\begin{equation}
+\mathcal K_i^{\rm G}
+=
+\Phi\!\left(\frac{\lambda_i^{\max}-\mu}{\sigma}\right)
+-
+\Phi\!\left(\frac{\lambda_i^{\min}-\mu}{\sigma}\right),
+\label{eq:KiG}
+\end{equation}
+where $\Phi$ is the standard normal cumulative distribution function (CDF) and the arguments are the standardised bin edges relative to the mean $\mu$. This expression is the probability mass that the Gaussian noise component places inside the bin.
+
+\subsection{EMG piece: deriving the CDF of $X=G+E$}
+
+\paragraph{Result.}
+The EMG contribution to the bin is simply the difference of the EMG CDF evaluated at the two bin edges,
+\begin{equation}
+\boxed{
+\mathcal K_i^{\rm EMG}
+=
+F_{\rm EMG}(\lambda_i^{\max};\mu,\sigma,\tau)
+-
+F_{\rm EMG}(\lambda_i^{\min};\mu,\sigma,\tau),
+}
+\label{eq:Kiexg}
+\end{equation}
+with the EMG CDF given in closed form by
+\begin{equation}
+\boxed{
+F_{\rm EMG}(x;\mu,\sigma,\tau)
+=
+\Phi\!\left(\frac{x-\mu}{\sigma}\right)
+-
+\exp\!\left[-\tau(x-\mu)+\tfrac{1}{2}\tau^{2}\sigma^{2}\right]
+\Phi\!\left(\frac{x-\mu}{\sigma}-\tau\sigma\right) .
+}
+\label{eq:exg_cdf}
+\end{equation}
+The first term is the Gaussian CDF at $x$; the second encodes the correction introduced by the exponential projection tail. The rest of this subsection derives Eq.~\eqref{eq:exg_cdf}; readers willing to take the result on faith can skip to the next subsection.
+
+\paragraph{Derivation.}
+The EMG term in Eq.~\eqref{eq:costanzi_kernel} is the PDF of a random variable that is the sum of a Gaussian and an exponential. Rather than integrating the PDF directly, it is much simpler to derive the CDF of that random variable first and then evaluate it at the two bin edges.
+
+Let
+\begin{equation}
+X = G + E,
+\label{eq:X_decomp}
+\end{equation}
+with
+\begin{equation}
+G \sim \mathcal N(\mu,\sigma^2),
+\qquad
+E \sim {\rm Exp}(\tau),
+\end{equation}
+where $G$ is a Gaussian variable of mean $\mu$ and variance $\sigma^2$, and $E$ is an exponential variable of rate $\tau$ (and mean $1/\tau$). The exponential density is
+\[
+p_E(e)=\tau\, e^{-\tau e}\,\Theta(e),
+\]
+with $\Theta$ the Heaviside step function enforcing $e\ge 0$. The resulting density of $X$ is exactly the EMG component of Eq.~\eqref{eq:costanzi_kernel}, and its CDF is
+\begin{equation}
+F_{\rm EMG}(x;\mu,\sigma,\tau)=P(X\le x).
+\end{equation}
+
+Conditioning on $G=g$ and using the independence of $G$ and $E$ gives
+\begin{equation}
+F_{\rm EMG}(x)
+=
+\int_{-\infty}^{\infty}
+P(E\le x-g)\,
+\mathcal N(g;\mu,\sigma)\,dg,
+\end{equation}
+i.e.\ an average of the conditional CDF $P(E\le x-g)$ over the Gaussian marginal. Because $E\ge 0$,
+\begin{equation}
+P(E\le x-g)=
+\begin{cases}
+1-e^{-\tau(x-g)}, & g\le x, \\
+0, & g>x,
+\end{cases}
+\end{equation}
+so the integrand vanishes for $g>x$. Substituting back and splitting the two pieces yields
+\begin{equation}
+F_{\rm EMG}(x)
+=
+\int_{-\infty}^{x}\mathcal N(g;\mu,\sigma)\,dg
+-
+\int_{-\infty}^{x} e^{-\tau(x-g)}\mathcal N(g;\mu,\sigma)\,dg,
+\label{eq:exg_cdf_step1}
+\end{equation}
+a difference of two truncated Gaussian integrals.
+
+The first term is just the Gaussian CDF,
+\begin{equation}
+\int_{-\infty}^{x}\mathcal N(g;\mu,\sigma)\,dg
+=
+\Phi\!\left(\frac{x-\mu}{\sigma}\right).
+\end{equation}
+For the second term we pull the $\lob$-independent factor out,
+\begin{equation}
+\int_{-\infty}^{x} e^{-\tau(x-g)}\mathcal N(g;\mu,\sigma)\,dg
+=
+e^{-\tau x}
+\int_{-\infty}^{x} e^{\tau g}\mathcal N(g;\mu,\sigma)\,dg,
+\end{equation}
+and complete the square in the exponent:
+\begin{equation}
+\tau g - \frac{(g-\mu)^2}{2\sigma^2}
+=
+-\frac{(g-\mu-\tau\sigma^2)^2}{2\sigma^2}
++
+\tau\mu + \frac{1}{2}\tau^2\sigma^2.
+\label{eq:complete_square}
+\end{equation}
+The right-hand side is again a Gaussian in $g$, now with shifted mean $\mu+\tau\sigma^2$, plus a constant. Absorbing the constant and re-integrating gives
+\begin{equation}
+\begin{aligned}
+e^{-\tau x}\int_{-\infty}^{x} e^{\tau g}\mathcal N(g;\mu,\sigma)\,dg
+&=
+\exp\!\left[-\tau(x-\mu)+\frac{1}{2}\tau^2\sigma^2\right] \\
+&\quad\times
+\Phi\!\left(\frac{x-\mu}{\sigma}-\tau\sigma\right).
+\end{aligned}
+\label{eq:exg_second_term}
+\end{equation}
+
+Substituting Eq.~\eqref{eq:exg_second_term} into Eq.~\eqref{eq:exg_cdf_step1} reproduces the closed-form EMG CDF announced in Eq.~\eqref{eq:exg_cdf}, so that evaluating it at the two bin edges gives Eq.~\eqref{eq:Kiexg} and completes the derivation.
+
+\subsection{Assembling the closed form of $\mathcal K_i(\ltr,z)$}
+
+For any function $g(\lob)$ we use the definite-integral evaluation notation
+\[
+\left.g(\lob)\right|_{\Delta\lambda_i}
+\equiv
+g(\lambda_i^{\max}) - g(\lambda_i^{\min}),
+\]
+so that evaluating a CDF between the two bin edges collapses to a single symbol. Combining Eqs.~\eqref{eq:Ki_split}, \eqref{eq:KiG}, and \eqref{eq:Kiexg} then gives the compact form
+\begin{equation}
+\boxed{
+\mathcal K_i(\ltr,z)
+=
+(1-f^{\rm prj})\left.\Phi\!\left(\frac{\lob-\mu}{\sigma}\right)\right|_{\Delta\lambda_i}
++
+f^{\rm prj}\,\Big.F_{\rm EMG}(\lob;\mu,\sigma,\tau)\Big|_{\Delta\lambda_i},
+}
+\label{eq:Ki_final}
+\end{equation}
+with $\mu=\ltr+\Delta\mu$ from Eq.~\eqref{eq:mu_def}. The two terms are the Gaussian and EMG probability masses inside $\Delta\lambda_i$, weighted by $(1-f^{\rm prj})$ and $f^{\rm prj}$ respectively.
+
+Substituting Eq.~\eqref{eq:exg_cdf} and $\mu=\ltr+\Delta\mu$ explicitly, this can be written fully expanded as
+\begin{equation}
+\boxed{
+\mathcal K_i(\ltr,z)
+=
+\left.\Phi\!\left(\frac{\lob-\ltr-\Delta\mu}{\sigma}\right)\right|_{\Delta\lambda_i}
+-\,
+f^{\rm prj}\left.
+\exp\!\left(-\tau(\lob-\ltr-\Delta\mu)+\tfrac{1}{2}\tau^{2}\sigma^{2}\right)
+\Phi\!\left(\frac{\lob-\ltr-\Delta\mu}{\sigma}-\tau\sigma\right)
+\right|_{\Delta\lambda_i}.
+}
+\label{eq:Ki_final_expanded}
+\end{equation}
+In this form the dependence on the latent richness $\ltr$ is explicit: it enters every Gaussian argument through the shifted residual $\lambda_i^{\min/\max}-\ltr-\Delta\mu$. This is the analytic bin probability at fixed $\ltr$ that we will feed into the 1D quadrature below.
+
+\section{Gauss--Legendre numerical integration in $\ltr$}
+
+With $\mathcal K_i$ known analytically, the selection function reduces to the single integral
+\begin{equation}
+S_i(M,\ztr)
+=
+\int_0^\infty d\ltr\,
+\mathcal K_i(\ltr,\ztr)\,
+P(\ltr\mid M,\ztr),
+\label{eq:Pi_1d}
+\end{equation}
+i.e.\ the bin-integrated kernel averaged over the mass--richness relation.
+
+We approximate this remaining 1D integral by Gauss--Legendre quadrature on a finite interval $[a,b]\subset(0,\infty)$:
+\begin{equation}
+S_i(M,\ztr)
+\approx
+\sum_{k=1}^{N_q}
+W_k\,
+\mathcal K_i(\lambda_k,\ztr)\,
+P(\lambda_k\mid M,\ztr),
+\label{eq:legendre_general}
+\end{equation}
+with mapped nodes and weights
+\begin{equation}
+\lambda_k=\frac{b-a}{2}\,t_k+\frac{a+b}{2},
+\qquad
+W_k=\frac{b-a}{2}\,w_k,
+\label{eq:legendre_nodes}
+\end{equation}
+where $(t_k,w_k)$ are the standard Gauss--Legendre nodes and weights on $[-1,1]$ and $N_q$ is the number of quadrature points. The nodes $t_k$ and weights $w_k$ are fixed once and for all; only the interval $[a,b]$ depends on the model parameters.
+
+Since $\ltr>0$, the integration limits are chosen to bracket the support of $P(\ltr\mid M,z)$,
+\begin{equation}
+a=\max\!\big(0,\,\mu_{\rm eff}-L\sigma_{\rm eff}\big),
+\qquad
+b=\mu_{\rm eff}+L\sigma_{\rm eff},
+\label{eq:ab_general}
+\end{equation}
+where $\mu_{\rm eff}$ and $\sigma_{\rm eff}$ are the mean and standard deviation of $P(\ltr\mid M,z)$ and $L\sim 6$--$8$ is chosen so that the interval captures essentially all of the probability mass. Different choices of the mass--richness relation $P(\ltr\mid M,z)$ therefore produce different $(\mu_{\rm eff},\sigma_{\rm eff})$ but do not change the structure of Eq.~\eqref{eq:legendre_general}.
+
+\section{Models for the mass--richness relation $P(\ltr\mid M,z)$}
+
+\subsection{Log-normal model}
+
+Following \citet{Costanzi2021} (their Eq.~2), the mean of $\ln\lambda$ at fixed mass and redshift is written as a linear combination of $\ln M$ and $\ln[(1+z)/(1+z_p)]$,
+\begin{equation}
+|\ln\lambda\rangle(M,z)
+=
+\ln A_\lambda
++ B_\lambda \ln\!\left(\frac{M}{M_p}\right)
++ C_\lambda \ln\!\left(\frac{1+z}{1+z_p}\right),
+\label{eq:mean_relation}
+\end{equation}
+with pivot mass $M_p = 3\times 10^{14}\,h^{-1}M_\odot$ and pivot redshift $z_p=0.45$; the three parameters $(A_\lambda, B_\lambda, C_\lambda)$ set the amplitude, mass slope, and redshift evolution of the mean mass--richness relation. The intrinsic scatter is taken to be log-normal with log-space variance \citep[also following][]{Costanzi2021},
+\begin{equation}
+\sigma^2_{\ln\lambda}(M,z)
+= D_\lambda^{2}
++ \frac{|\lambda\rangle - 1}{|\lambda\rangle^{2}},
+\label{eq:sigma_lnlambda}
+\end{equation}
+where $D_\lambda$ is an intrinsic halo-to-halo scatter and the second term is the Poisson-like contribution from the discrete galaxy counts. The mass--richness PDF is then
+\begin{equation}
+P(\ltr\mid M,z)
+=
+\frac{1}{\ltr\,\sigma_{\ln\lambda}\sqrt{2\pi}}
+\exp\!\left[
+-\frac{\left(\ln\ltr-|\ln\lambda\rangle\right)^{2}}{2\,\sigma^2_{\ln\lambda}}
+\right],
+\label{eq:lognormal_mor}
+\end{equation}
+i.e.\ $\ln\ltr\sim\mathcal N\!\left(|\ln\lambda\rangle,\,\sigma^{2}_{\ln\lambda}\right)$. Under this parametrisation the linear-space mean and variance are the standard log-normal moments,
+\begin{equation}
+|\lambda\rangle
+= \exp\!\left(|\ln\lambda\rangle+\tfrac{1}{2}\sigma^{2}_{\ln\lambda}\right),
+\qquad
+\sigma_{\lambda}^{2}
+= |\lambda\rangle^{2}\left(e^{\sigma^{2}_{\ln\lambda}}-1\right),
+\label{eq:lognormal_moments}
+\end{equation}
+so that the fractional scatter is $\sigma_{\lambda}/|\lambda\rangle = \sqrt{e^{\sigma^{2}_{\ln\lambda}}-1}\approx\sigma_{\ln\lambda}$ for small scatter. Substituting these moments into Eq.~\eqref{eq:ab_general} gives the quadrature interval
+\begin{equation}
+a=\max\!\left(0,\,|\lambda\rangle - L\,\sigma_{\lambda}\right),
+\qquad
+b=|\lambda\rangle + L\,\sigma_{\lambda},
+\label{eq:ab_lognormal}
+\end{equation}
+which is the bracket used in Eq.~\eqref{eq:legendre_general} for the log-normal case.
+
+\subsection{Halo Occupation Distribution (HOD) Model}
+
+The DES Y1 cluster cosmology analysis \citep[][with weak-lensing mass calibration from \citealt{McClintock2019}]{Costanzi2019cosmo} adopts a halo-occupation distribution (HOD) model in which the intrinsic richness is split into a central and a satellite component, $\ltr = \lambda^{\rm cen} + \lambda^{\rm sat}$, with $\lambda^{\rm cen}=1$ above the detection threshold $M_{\rm min}$ and zero below. The mean satellite richness follows the power-law form later used in \citet{Costanzi2026},
+\begin{equation}
+|\lambda^{\rm sat}\rangle(M,z)
+=
+\left(\frac{M-M_{\rm min}}{M_1-M_{\rm min}}\right)^{\!\alpha}
+\left(\frac{1+z}{1+z_\star}\right)^{\!\epsilon},
+\label{eq:mean_lsat}
+\end{equation}
+where $M_1$ is the halo mass at which a halo hosts on average one satellite, $\alpha$ and $\epsilon$ control the mass slope and redshift evolution, and $z_\star=0.45$ is a pivot redshift. This decomposition is physically motivated: each halo hosts one bright central galaxy, and the population of fainter satellites is drawn from the underlying galaxy HOD. Crucially, because the satellite counts are intrinsically discrete, the stochasticity is Poissonian at low occupancy $|\lambda^{\rm sat}\rangle\lesssim 10$ (where the log-normal overestimates the scatter) and super-Poissonian at high occupancy due to an additional halo-to-halo term $\sigma_{\rm intr}$, giving the two-component variance
+\begin{equation}
+\sigma^{2}_{\ltr\mid M}
+\simeq
+|\lambda^{\rm sat}\rangle
++
+\left(\sigma_{\rm intr}\,|\lambda^{\rm sat}\rangle\right)^{2}.
+\label{eq:hod_variance}
+\end{equation}
+Eq.~\eqref{eq:hod_variance} captures the physical content of the HOD stochastic model but requires an explicit form for $P(\ltr\mid M,z)$, which is the convolution of a Poisson distribution with a Gaussian halo-to-halo scatter and has no closed form. In \citet{Costanzi2019cosmo} it was first approximated by a skew-normal whose parameters were retrieved from a pre-computed lookup table --- accurate, but not ideal in a forward-model pipeline.
+
+A cleaner alternative, (priv.\ comm. with M. Costanzi), is to approximate the Poisson-plus-scatter law by a continuous shifted-Poisson distribution. Define
+\begin{equation}
+\delta = \big(\sigma_{\rm intr}\,|\lambda^{\rm sat}\rangle\big)^{2},
+\qquad
+\nu = |\lambda^{\rm sat}\rangle + \delta,
+\label{eq:delta_nu}
+\end{equation}
+so that $\delta$ is the intrinsic halo-to-halo variance contribution and $\nu$ is a shifted Poisson rate. The distribution is
+\begin{equation}
+\boxed{
+P(\ltr\mid M,z)
+=
+\exp\!\Big[
+-\nu
++(\ltr+\delta-1)\ln\nu
+-\ln\Gamma(\ltr+\delta)
+\Big],
+}
+\label{eq:cont_poisson_shifted}
+\end{equation}
+where $\Gamma$ is the gamma function. Eq.~\eqref{eq:cont_poisson_shifted} is obtained by promoting the factorial of the Poisson PMF to a gamma and shifting its argument by $\delta$; this keeps the two-component variance scaling quoted above and recovers the Poisson limit as $\sigma_{\rm intr}\to 0$. Numerical comparisons show that this continuous form tracks the exact Poisson-convolved-with-Gaussian law essentially everywhere --- including the low-$\ltr$ tail where the skew-normal approximation breaks down. For forward-model use it has two advantages over the skew-normal: it is closed-form (no lookup tables, fully differentiable in $(M,z)$), and it extends smoothly to the non-integer richness regime required by the quadrature.
+
+To leading order the effective moments of Eq.~\eqref{eq:cont_poisson_shifted} are
+\begin{equation}
+\mu_{\rm eff}\approx |\lambda^{\rm sat}\rangle,
+\qquad
+\sigma_{\rm eff}^{2}
+\approx
+|\lambda^{\rm sat}\rangle
++
+\left(\sigma_{\rm intr}\,|\lambda^{\rm sat}\rangle\right)^{2},
+\label{eq:mu_sigma_hod}
+\end{equation}
+so that the quadrature interval is
+\begin{equation}
+a=\max\!\left(0,\,\mu_{\rm eff}-L\,\sigma_{\rm eff}\right),
+\qquad
+b=\mu_{\rm eff}+L\,\sigma_{\rm eff},
+\label{eq:ab_hod}
+\end{equation}
+and these limits are plugged back into Eq.~\eqref{eq:legendre_general} to obtain $S_i(M,\ztr)$ for the HOD model.
+
+\section{Summary}
+
+The richness selection function $S_i(M,\ztr)$ admits a closed-form expression built from two analytic pieces: a Gaussian CDF for the $\zob$ bin integral, and the CDF of an exponentially modified Gaussian for the $\lob$ integral of the Costanzi projection kernel (Eq.~\eqref{eq:Ki_final_expanded}). The residual latent-richness integral is evaluated by Gauss--Legendre quadrature,
+\begin{equation}
+\boxed{
+S_i(M,\ztr)
+\approx
+\sum_{k=1}^{N_q}
+\frac{b-a}{2}\,w_k\,
+\mathcal K_i(\lambda_k,\ztr)\,
+P(\lambda_k\mid M,\ztr),
+}
+\label{eq:final_weighted_sum}
+\end{equation}
+with nodes $\lambda_k=\tfrac{b-a}{2}t_k+\tfrac{a+b}{2}>0$ and interval $(a,b)$ set by the scatter of $P(\ltr\mid M,\ztr)$ around the mean mass--richness relation at $(M,\ztr)$.
+
+Plugging this back into the forward-model number counts collapses Eq.~\eqref{eq:Nij} to a 2D integral over $(M,\ztr)$:
+\begin{equation}
+\langle N_{ij}\rangle
+=
+\int dM\int d\ztr\;
+\Omega(\ztr)\,\frac{dV}{d\Omega\,d\ztr}\,n(M,\ztr)\;
+S_i(M,\ztr)\,\mathcal K_j(\ztr),
+\label{eq:Nij_2D}
+\end{equation}
+with $\mathcal K_j$ given by Eq.~\eqref{eq:Kij_split}. This form is well-suited to forward-model cosmology pipelines: the Gauss--Legendre nodes and weights are pre-computed, $S_i$ and $\mathcal K_j$ use only elementary special functions ($\Phi$, $\exp$, $\ln\Gamma$), and the remaining $(M,\ztr)$ integral is evaluated rapidly by GPU-accelerated numerical integration.
+
+For cluster lensing observables such as $\Delta\Sigma(R)$, the forward model introduces additional integrals over miscentering --- both the radial offset $R_{\rm mis}$ and the azimuthal angle $\theta_{\rm mis}$ --- and over the projected radius $R$, raising the nominal dimensionality of $\langle N_{ij}\,\Delta\Sigma_{ij}\rangle$ to 7--8D. The closed-form richness selection $S_i(M,\ztr)$ derived here remains a drop-in factor in the integrand, so the analytic $\lob$ and $\zob$ reductions carry over unchanged.
+
+\section*{Acknowledgements}
+
+The exposition of this note was improved with the assistance of an AI tool (Anthropic's Claude Code, Opus~4.7) used as a writing aid and search-engine assistant; all mathematical content, physical interpretation, and editorial decisions are my own. I thank Matteo Costanzi for a private communication that was used in the continuous Poisson-shifted closed form of Eq.~\eqref{eq:cont_poisson_shifted}.
+
+
+{\footnotesize
+\begin{thebibliography}{9}
+\bibitem[Costanzi et al.(2019a)]{Costanzi2019proj} Costanzi, M., et al.\ 2019, MNRAS 482, 490. arXiv:1807.11719.
+\bibitem[Costanzi et al.(2019b)]{Costanzi2019cosmo} Costanzi, M., et al.\ (DES) 2019, MNRAS 488, 4779. arXiv:1810.09456.
+\bibitem[Costanzi et al.(2021)]{Costanzi2021} Costanzi, M., et al.\ (DES+SPT) 2021, PRD 103, 043522. arXiv:2010.13800.
+\bibitem[Costanzi et al.(2026)]{Costanzi2026} Costanzi, M., et al.\ 2026, arXiv:2604.05833.
+\bibitem[McClintock et al.(2019)]{McClintock2019} McClintock, T., et al.\ (DES) 2019, MNRAS 482, 1352. arXiv:1805.00039.
+\bibitem[Grushka(1972)]{Grushka1972} Grushka, E.\ 1972, Anal.\ Chem.\ 44, 1733.
+\bibitem[DES(2021)]{Y3CosmoSISPlans} DES Collaboration 2021, \textit{DES Y3 cluster observables and CosmoSIS plans}, internal note.
+\end{thebibliography}
+}
+
+\end{document}
