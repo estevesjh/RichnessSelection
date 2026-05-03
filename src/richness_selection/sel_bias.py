@@ -420,103 +420,96 @@ class SelBias:
         # lambda (true richness) grid: eq. 3 runs lam over (0, lob]
         lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)  # (Nlam,)
 
-        # theta grid: (0, 2 theta_lob], where projected halos contribute
+        # theta grid: SPLIT-AT-EXCLUSION per z.  The exclusion mask
+        # xi_NL = 0 for Delta_chi < R_excl creates a hard step at
+        # theta_excl(z); placing a GL grid that STARTS at theta_excl(z)
+        # eliminates the step from the integrand and reaches converged
+        # precision at Nth ~ 10 instead of needing Nth > 200 with the
+        # fixed (0, 2 theta_lob) grid + mask.
+        #
+        # theta_excl(z) from cos(theta_excl) = (chi_z^2 + chi_o^2 - R_excl^2) / (2 chi_z chi_o)
+        # (clipped to [-1,1]).  When the argument > 1, |Delta_chi_par| > R_excl
+        # so no exclusion: theta_excl = 0, integrate the full (eps, 2 theta_lob).
         theta_max = 2.0 * theta_lob
-        ths, wth = gl_nodes(1e-6, theta_max, g.Nth)             # (Nth,)
-        sin_th = np.sin(ths)                                    # (Nth,)
-        sigmoid_th = self._sigmoid_theta(ths, lob, zob)         # (Nth,)
+        eps_theta = 1e-6
 
-        # 3-D separation (Nz, Nth)
-        cos_th = np.cos(ths)
-        dchi2 = (chi_z[:, None] ** 2 + chi_o ** 2
-                 - 2.0 * chi_z[:, None] * chi_o * cos_th[None, :])
-        dchi = np.sqrt(np.maximum(dchi2, 0.0))
-        xi_zth = self.xi_NL(dchi.ravel(), zob).reshape(dchi.shape)
-        if self.exclusion:
-            # Matteo's exclusion radius: R_lambda(lob) * (1 + zcl)
-            R_excl = R_lambda(lob) * (1.0 + zob)
-            xi_zth = np.where(dchi < R_excl, 0.0, xi_zth)
+        cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
+            2.0 * chi_z * chi_o + 1e-30)
+        cos_excl = np.clip(cos_excl, -1.0, 1.0)
+        theta_excl_z = np.arccos(cos_excl)                      # (Nz,)
+        # Where |Delta_chi_par| > R_excl, cos_excl > 1 before clip -> clip
+        # sets it to 1 -> theta_excl = 0.  Identify that case and set to eps.
+        no_excl = cos_excl >= 1.0 - 1e-12
+        theta_excl_z = np.where(no_excl, eps_theta, theta_excl_z)
+        # If no exclusion applies AT ALL (all z outside exclusion band),
+        # fall back to the old fixed-grid path; rare but check.
 
-        # b(M, z) on (NM, Nz)
+        Nth = g.Nth
+        Nlam = lam_grid.size
+        Nz = zs.size
+
+        # M-z grids
         bM_mz = self.bias(Ms[:, None], zs[None, :])            # (NM, Nz)
-        # HMF n(M, z) on (NM, Nz)
         n_mz = self.hmf(Ms[:, None], zs[None, :])              # (NM, Nz)
-        # P(lam | M, z) on (Nlam, NM, Nz)
         p_lmz = self.mor.pdf(lam_grid[:, None, None],
                              Ms[None, :, None],
                              zs[None, None, :])                # (Nlam, NM, Nz)
+        M_weight = wM * Ms                                      # (NM,)
 
-        # f_A(theta, lam, z, lob, zob): (Nth, Nlam, Nz)
-        #   theta_lam(lam, z) = R_lambda(lam) (1+z) / chi(z)
-        theta_lam_lz = (R_lambda(lam_grid)[:, None]
-                        * (1.0 + zs[None, :]) / chi_z[None, :])  # (Nlam, Nz)
-        # area_overlap: for each (lam, z), compute over ths
-        # reshape theta_lam to 1-D of length Nlam*Nz and broadcast
-        Nth = ths.size; Nlam = lam_grid.size; Nz = zs.size
-        fA = np.empty((Nth, Nlam, Nz))
+        # Loop over z: each z has its own theta grid from theta_excl(z)
+        # to 2*theta_lob.  Inside the loop we do the same contractions
+        # as before but on a per-z theta.
+        P1_per_z = np.zeros(Nz)
+        I2_per_z = np.zeros(Nz)
+        I1_per_z = np.zeros(Nz)
+
         for iz in range(Nz):
-            fA[:, :, iz] = area_overlap(ths, theta_lob, theta_lam_lz[:, iz])
+            th_lo = max(theta_excl_z[iz], eps_theta)
+            if th_lo >= theta_max:
+                # fully excluded at this z, integrand is zero
+                continue
+            ths_z, wth_z = gl_nodes(th_lo, theta_max, Nth)
+            sin_th_z = np.sin(ths_z)
+            sigmoid_z = self._sigmoid_theta(ths_z, lob, zob)
+            th_weight_z = wth_z * 2.0 * np.pi * sin_th_z        # (Nth,)
+            cos_th_z = np.cos(ths_z)
 
-        # Angular weight (theta integral only, eq. 9 requires 2 pi sin theta)
-        # theta-integrand (shared for all operators):
-        th_weight = wth * 2.0 * np.pi * sin_th                 # (Nth,)
-        # For P[1] we need:
-        #   2 pi int dtheta sin(theta) f_A(theta, lam, z, lob, zob)
-        # -> shape (Nlam, Nz)
-        angular_P1 = np.einsum('t,tLz->Lz', th_weight, fA)     # (Nlam, Nz)
+            # 3-D separation at this z
+            dchi_z = np.sqrt(np.maximum(
+                chi_z[iz] ** 2 + chi_o ** 2
+                - 2.0 * chi_z[iz] * chi_o * cos_th_z, 0.0))     # (Nth,)
+            xi_z = self.xi_NL(dchi_z, zob)                      # (Nth,)
+            # No mask needed: theta_lo = theta_excl(z) already excludes.
 
-        # rho_prj(lam, z | lob, zob)  (pre-integrated over theta, shape (Nlam, Nz))
-        rho_prj_P1 = wz_kern[None, :] * angular_P1 * lam_grid[:, None]
+            # f_A(theta, lam) at this z
+            theta_lam_l_z = R_lambda(lam_grid) * (1.0 + zs[iz]) / chi_z[iz]
+            fA_z = area_overlap(ths_z, theta_lob, theta_lam_l_z)  # (Nth, Nlam)
 
-        # P[1] integrand:  dV * int d(lnM) M n(M,z) * int d lam P(lam|M,z) * rho_prj
-        # We integrate in d(lnM) so the HMF gets multiplied by M.
-        lam_integrand_P1 = np.einsum('L,LMz,Lz->Mz',
-                                     wlam, p_lmz, rho_prj_P1)   # (NM, Nz)
-        # wM are d(lnM) weights -- multiply by M explicitly:
-        M_weight = wM * Ms                                       # (NM,)
-        M_integrand_P1 = np.einsum('M,MZ,MZ->Z',
-                                   M_weight, n_mz, lam_integrand_P1)  # (Nz,)
-        P1 = float(np.sum(wzs * dV * M_integrand_P1))
+            # Angular integrals at this z (contract theta)
+            ang_P1_z = np.einsum('t,tL->L', th_weight_z, fA_z)                # (Nlam,)
+            ang_I2_z = np.einsum('t,tL,t->L', th_weight_z, fA_z, xi_z)        # (Nlam,)
+            ang_I1_z = np.einsum('t,t,tL,t->L', th_weight_z, sigmoid_z,
+                                  fA_z, xi_z)                                 # (Nlam,)
 
-        # For I1, I2 we need the integrand with b(M,z) and xi_NL(z, theta)
-        # included.  Theta does NOT factorize from (M, z) for these, so we
-        # need the full (Nth, NM, Nz) contraction:
-        #   2 pi int dtheta sin(theta) f_A(theta,lam,z) b(M,z) xi(z,theta) [sigmoid]
-        #
-        # Since b(M,z) and xi(z,theta) don't depend on lam, it's cleanest to
-        # split the lam integral into an angular-only factor:
-        #   angular_I(theta, lam, z) = f_A(theta, lam, z)
-        # and then integrate over theta after multiplying by xi, sigmoid.
-        # (Nth, Nlam, Nz) f_A, (Nz, Nth) xi_zth.
+            # lambda integral (contract L)
+            rho_prefac_z = wz_kern[iz] * lam_grid                             # (Nlam,)
+            p_lm_z = p_lmz[:, :, iz]                                          # (Nlam, NM)
+            lam_int_P1_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_P1_z)                # (NM,)
+            lam_int_I2_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_I2_z)                # (NM,)
+            lam_int_I1_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_I1_z)                # (NM,)
 
-        # integrand for I2: 2 pi sin(theta) f_A xi(z,theta)   -> (Nth, Nlam, Nz)
-        xi_tz = xi_zth.T                                       # (Nth, Nz)
-        # Integrate theta: contract Nth with weight (2 pi sin th) and sum
-        #   ang_I2(lam, z) = sum_t wth * 2pi sin th * fA(t,L,z) * xi(t,z)
-        ang_I2 = np.einsum('t,tLz,tz->Lz', th_weight, fA, xi_tz)  # (Nlam, Nz)
-        # ang_I1 = same but weighted by sigmoid
-        ang_I1 = np.einsum('t,t,tLz,tz->Lz',
-                           th_weight, sigmoid_th, fA, xi_tz)   # (Nlam, Nz)
+            # M integral (contract M)
+            P1_per_z[iz] = np.sum(M_weight * n_mz[:, iz] * lam_int_P1_z)
+            I2_per_z[iz] = np.sum(M_weight * n_mz[:, iz] * bM_mz[:, iz] * lam_int_I2_z)
+            I1_per_z[iz] = np.sum(M_weight * n_mz[:, iz] * bM_mz[:, iz] * lam_int_I1_z)
 
-        # rho_prj-style prefactor: w_z * lam
-        rho_prefac = wz_kern[None, :] * lam_grid[:, None]      # (Nlam, Nz)
-        # Integrate lam * P(lam|M,z): (Nlam, Nz) -> (M, z) after weighting
-        # Full integrand for I2:
-        #   (Nlam, NM, Nz): wlam * p_lmz * (rho_prefac * ang_I2 * b)   -- b is (NM, Nz)
-        # Factor out M-independent rho_prefac * ang:
-        lam_I2 = rho_prefac * ang_I2                           # (Nlam, Nz)
-        lam_I1 = rho_prefac * ang_I1                           # (Nlam, Nz)
-
-        lam_int_I2 = np.einsum('L,LMz,Lz->Mz', wlam, p_lmz, lam_I2)  # (NM, Nz)
-        lam_int_I1 = np.einsum('L,LMz,Lz->Mz', wlam, p_lmz, lam_I1)  # (NM, Nz)
-
-        # Multiply by M b(M,z) n(M,z), integrate d(lnM) then d z
-        M_I2 = np.einsum('M,MZ,MZ,MZ->Z',
-                         M_weight, n_mz, bM_mz, lam_int_I2)    # (Nz,)
-        M_I1 = np.einsum('M,MZ,MZ,MZ->Z',
-                         M_weight, n_mz, bM_mz, lam_int_I1)    # (Nz,)
-        I2 = float(np.sum(wzs * dV * M_I2))
-        I1 = float(np.sum(wzs * dV * M_I1))
+        # Outer z-integral: sum (wz * dV * per_z)
+        P1 = float(np.sum(wzs * dV * P1_per_z))
+        I2 = float(np.sum(wzs * dV * I2_per_z))
+        I1 = float(np.sum(wzs * dV * I1_per_z))
 
         return P1, I1, I2
 
