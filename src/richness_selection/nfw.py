@@ -4,8 +4,25 @@ Tables (loaded once at construction):
     table_1000_1e-03_5e+03_single_logx.txt      999 pts   ln(R/R_s)
     table_1000_1e-03_5e+03_single_logxmis.txt   249 pts   ln(R_mis/R_s)
     table_1000_1e-03_5e+03_log_sigma_single.txt 250 x 1000  ln f(x, x_mis)
-    f = (1/(2 pi R_s rho_s)) * (1/(2 pi)) int d phi Sigma_NFW(R_h)
-    Sigma_mis(R, M, z, R_mis) = 2 pi R_s rho_s * exp(ln f)
+
+The stored `f` is empirically (2023-table convention):
+    f = (1/(4 pi^2 R_s rho_s)) * int d phi Sigma_NFW(R_h)
+    <=> f = (1/(2 pi)) * <Sigma_NFW>_phi / (R_s rho_s)
+
+When we reconstruct via  `Sigma_mis = (2 pi R_s rho_s) * exp(ln f)`
+we get  Sigma_mis = <Sigma_NFW>_phi / pi  (i.e. phi-integrated then /pi),
+which is HALF the Costanzi 2026 paper eq. 14 definition:
+    Sigma_mis^{paper} = int_0^2pi Sigma_NFW(R_h) d phi
+
+So the lookup's return, multiplied by 2, matches paper eq. 14.  The
+factor-of-2 is applied in `sigma_grid` below, so downstream callers
+(e.g. Sigma_prj) see paper-convention values.
+
+Cross-check: at R_mis -> 0 the paper eq. 14 gives
+    Sigma_mis = 2 pi * Sigma_NFW(R)   (phi-independent integrand)
+whereas the centered Sigma_NFW itself is just `Sigma_NFW(R)`.  In
+Sigma_prj / eq. 13, `Sigma_mis` with paper eq. 14's definition is what
+gets integrated; the centered profile is never passed directly.
 """
 from __future__ import annotations
 import os
@@ -49,10 +66,15 @@ class NFWMiscentered:
         return rs, rho_s
 
     def sigma_grid(self, R_arr, R_mis_arr, M, z):
-        """Vectorised Sigma_mis over (R_mis, R): returns (N_Rmis, N_R)."""
+        """Sigma_mis over (R_mis, R) in the Costanzi 2026 paper eq. 14
+        convention:  Sigma_mis = int_0^{2 pi} Sigma_NFW(R_h) d phi.
+
+        Returns (N_Rmis, N_R) array of Sigma_mis [Msun/h / (cMpc/h)^2].
+        """
         rs, rho_s = self._rs_and_rhos(M, z)
         lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
         lnxmis = np.clip(np.log(R_mis_arr / rs),
                          self._lnxmis_lo, self._lnxmis_hi)
         lnF = self._spl(lnxmis, lnx)
-        return (2.0 * np.pi * rs * rho_s) * np.exp(lnF)
+        # Stored lookup = (1/2) * paper_eq14; correct with the factor of 2.
+        return 2.0 * (2.0 * np.pi * rs * rho_s) * np.exp(lnF)

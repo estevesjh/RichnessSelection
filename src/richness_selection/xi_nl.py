@@ -50,34 +50,46 @@ def _camb_halofit_pk(cosmo: Cosmology, z_grid, kmax=100.0, nk=2048):
 
 
 class XiNL:
-    """xi_NL(r, z) interpolator built from halofit P_NL(k, z)."""
+    """xi_NL(r, z) interpolator built from halofit P_NL(k, z).
+
+    The halofit CAMB call + FFTlog Hankel transform (~2 s) are deferred
+    to first use so constructing the object is cheap.  Call ``build()``
+    explicitly to force the precomputation up front.
+    """
 
     def __init__(self, cosmo: Cosmology,
                  z_min: float = 0.05, z_max: float = 0.95, nz: int = 19,
                  k_max: float = 100.0, nk: int = 2048):
         self.cosmo = cosmo
         self.z_grid = np.linspace(z_min, z_max, nz)
-        kh, zs_out, Pnl = _camb_halofit_pk(cosmo, self.z_grid,
-                                           kmax=k_max, nk=nk)
+        self._k_max = k_max
+        self._nk = nk
+        self._spl = None
+        self.r_grid = None
+        self.xi = None
 
-        # mcfit: P(k) -> xi(r) via FFTlog.  r_grid comes out log-spaced
-        # from the same k_grid; we don't pick it ourselves.
+    def build(self):
+        """Run the halofit CAMB call + Hankel transform and cache the
+        (ln r, z) spline.  Idempotent and a no-op if already built."""
+        if self._spl is not None:
+            return
+        kh, zs_out, Pnl = _camb_halofit_pk(self.cosmo, self.z_grid,
+                                           kmax=self._k_max, nk=self._nk)
         from mcfit import P2xi
         h = P2xi(kh, lowring=True)
         xi_list = []
         for iz in range(zs_out.size):
             r_out, xi_z = h(Pnl[iz], extrap=True)
             xi_list.append(xi_z)
-        self.r_grid = np.asarray(r_out)          # (nr,)
-        self.xi = np.array(xi_list)              # (nz, nr)
-
-        # Matteo-compatible interpolator: xir2 = xi * r^2, spline over
-        # (ln r, z).
+        self.r_grid = np.asarray(r_out)
+        self.xi = np.array(xi_list)
         self._spl = RectBivariateSpline(
             np.log(self.r_grid), zs_out, (self.xi * self.r_grid ** 2).T)
 
     def __call__(self, r, z):
         """xi_NL(r, z) at broadcast shapes; r in cMpc/h."""
+        if self._spl is None:
+            self.build()
         r = np.asarray(r, dtype=float)
         lnr = np.log(np.clip(r, self.r_grid[0], self.r_grid[-1]))
         z_arr = np.broadcast_to(np.asarray(z, dtype=float), lnr.shape)
@@ -87,4 +99,6 @@ class XiNL:
     # Matteo-style alias:  xir2_NL_r_z(log_r, z) -> xi * r^2, returning a 2D
     # block if given 1-D inputs (same convention as scipy's __call__).
     def xir2(self, log_r, z):
+        if self._spl is None:
+            self.build()
         return self._spl(log_r, z)
