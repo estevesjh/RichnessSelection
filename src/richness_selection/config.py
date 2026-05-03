@@ -20,14 +20,16 @@ DEFAULT_COSMO_PARAMS = dict(
 class GridConfig:
     """Integration grid sizes used by Sigma_prj pipeline.
 
-    ``Nz`` is split evenly into foreground + background halves in
-    `_P_operator`, each log-spaced in |Delta chi|.  Paper Fig. 2
-    agreement required Nz >= ~50 total; default of 80 (40+40) reaches
-    sub-percent convergence on the z-spike integrand.
+    Defaults chosen for sub-0.01% precision on P[1], I_1, I_2 against
+    a scipy.integrate.quad reference at (lob=20, zob=0.5):
+      - Nz=80 (40 fg + 40 bg log-spaced in |Delta chi|, Option E)
+      - Nth=10 GL nodes (split-at-exclusion; theta_excl(z) is the
+        lower limit of the GL interval so the integrand is smooth)
+      - NM=24 GL nodes (mass integrand is smooth)
     """
     Nz: int = 80
     NM: int = 24
-    Nth: int = 20
+    Nth: int = 10
     ln_M_min: float = 12.5 * 2.302585092994046   # log(10^12.5)
     ln_M_max: float = 15.5 * 2.302585092994046   # log(10^15.5)
     ltr_grid_size: int = 16

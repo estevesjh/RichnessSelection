@@ -202,28 +202,36 @@ class SelBias:
         lnMs, wM = gl_nodes(ln_M_min, ln_M_max, g.NM)
         Ms = np.exp(lnMs); M_weight = wM * Ms
         lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)
-        ths, wth = gl_nodes(1e-6, 2.0 * theta_lob, g.Nth)
-        sin_th = np.sin(ths)
-        th_weight = wth * 2.0 * np.pi * sin_th
+
+        theta_max_hi = 2.0 * theta_lob
+        eps_theta = 1e-6
 
         def f_at_z(z):
-            """|f_P1(z)| + |f_I2(z)| -- combined weight for CDF."""
+            """|f_P1(z)| + |f_I2(z)| using split-at-exclusion theta grid."""
             chi_z = float(self.cosmo.chi(z))
             dV = float(self.cosmo.dV_dzdOm(z))
             wz_val = float(w_z(np.array([z]), zob)[0])
             if wz_val <= 0:
                 return 0.0
-            cos_th = np.cos(ths)
+            # theta_excl(z) split -- matches _P_operator's theta grid choice
+            cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
+                2.0 * chi_z * chi_o + 1e-30)
+            cos_excl = min(max(cos_excl, -1.0), 1.0)
+            th_lo = np.arccos(cos_excl) if cos_excl < 1.0 - 1e-12 else eps_theta
+            th_lo = max(th_lo, eps_theta)
+            if th_lo >= theta_max_hi:
+                return 0.0
+            ths_z, wth_z = gl_nodes(th_lo, theta_max_hi, g.Nth)
+            sin_th_z = np.sin(ths_z)
+            th_weight_z = wth_z * 2.0 * np.pi * sin_th_z
+            cos_th_z = np.cos(ths_z)
             dchi = np.sqrt(np.maximum(
-                chi_z ** 2 + chi_o ** 2 - 2 * chi_z * chi_o * cos_th, 0.0))
-            xi_th = self.xi_NL(dchi, zob)
-            if self.exclusion:
-                xi_th = np.where(dchi < R_excl, 0.0, xi_th)
+                chi_z ** 2 + chi_o ** 2 - 2 * chi_z * chi_o * cos_th_z, 0.0))
+            xi_th = self.xi_NL(dchi, zob)     # no mask; split already excludes
             theta_lam_l = R_lambda(lam_grid) * (1.0 + z) / chi_z
-            fA = area_overlap(ths, theta_lob, theta_lam_l)
-            # Angular integrals for P[1] (no xi) and I_2 (xi)
-            ang_P1 = np.einsum('t,tL->L', th_weight, fA)
-            ang_I2 = np.einsum('t,tL,t->L', th_weight, fA, xi_th)
+            fA = area_overlap(ths_z, theta_lob, theta_lam_l)
+            ang_P1 = np.einsum('t,tL->L', th_weight_z, fA)
+            ang_I2 = np.einsum('t,tL,t->L', th_weight_z, fA, xi_th)
             P_lmz = self.mor.pdf(lam_grid[:, None], Ms[None, :], z)
             rho_prefac = wz_val * lam_grid
             lam_int_P1 = np.einsum('L,LM,L->M', wlam, P_lmz,
@@ -231,12 +239,8 @@ class SelBias:
             lam_int_I2 = np.einsum('L,LM,L->M', wlam, P_lmz,
                                     rho_prefac * ang_I2)
             n_m = self.hmf(Ms, z); b_m = self.bias(Ms, z)
-            # P[1] weight: M n(M,z) lam_int_P1;  I_2 weight: M b(M,z) n(M,z) lam_int_I2
             f_P1 = dV * np.sum(M_weight * n_m * lam_int_P1)
             f_I2 = dV * np.sum(M_weight * n_m * b_m * lam_int_I2)
-            # Use absolute values, rescaled to similar amplitude so neither
-            # dominates the CDF entirely.
-            # P[1] ~ O(1), I_2 ~ O(0.3) -- similar already, just sum abs.
             return abs(f_P1) + abs(f_I2)
 
         return f_at_z
