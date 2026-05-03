@@ -1,10 +1,29 @@
 """Sigma_prj(R | lob, zob) orchestrator.
 
-Evaluates the projected surface density of the miscentered halo profile
-convolved with the projection-effects selection bias.  Ported verbatim
-from notebook cell 20, with the module-global state replaced by class
-attributes so a new Cosmology instance gives a clean, cache-free
-evaluation -- safe for MCMC sampling.
+Evaluates Costanzi 2026 Eq.~13:
+
+    < Sigma_prj(R | lob, zob) > = int dz dV/dOmega int dM n(M,z)
+                                  * int dtheta sin(theta)
+                                    [1 + b(M,z) b_sel(theta) xi_NL(z,theta)]
+                                  * Sigma_mis(R | M, z, theta, zob)
+
+Key numerical choices (documented in docs/z_integral_recipe.tex):
+
+- z-axis: sel_bias._z_grid_option_{E,D,C} dispatch, default Option C.
+  (Inherits the same z-grid selection the sel_bias operator uses.)
+- theta-axis: SPLIT at theta_R = R / D_A(zob), the location of the
+  NFW peak Sigma_mis(R, R_theta = R).  Log-GL on [eps, theta_R] and
+  [theta_R, theta_max].  This mirrors the split-at-exclusion trick
+  that made sel_bias converge at Nth=10: peak at boundary -> GL
+  nodes cluster around it -> converges at modest N per half.
+  Default: N_inner = N_outer = 50.
+- M-axis: shared with sel_bias (GL on ln M).
+
+The crucial difference from sel_bias is the theta structure:
+sel_bias's theta range is (theta_excl, 2 theta_lob) with no interior
+peak (xi_NL peaks at the left endpoint -- which IS theta_excl).
+Sigma_prj's theta range is (0, 30/D_A) with the Sigma_mis peak at
+theta_R that moves with R, so the per-R split is essential.
 """
 from __future__ import annotations
 import numpy as np
@@ -14,24 +33,15 @@ from .nfw import NFWMiscentered
 from .sel_bias import SelBias
 from .gl import gl_nodes
 from .geometry import R_lambda
-from .photoz import sigma_z as sigma_z_of_z
 
 
 class SigmaPrj:
-    """Projected surface density Sigma^prj(R | lob, zob).
-
-    Parameters
-    ----------
-    cosmo : Cosmology
-    sel_bias : SelBias
-        Wired with the same cosmology; supplies bias_precompute and
-        b_sel_marginalised.
-    nfw : NFWMiscentered
-        Miscentered NFW Sigma lookup.
-    """
+    """Projected two-halo surface density (Costanzi 2026 Eq. 13)."""
 
     def __init__(self, cosmo: Cosmology, sel_bias: SelBias,
-                 nfw: NFWMiscentered):
+                 nfw: NFWMiscentered,
+                 n_theta_inner: int = 50,
+                 n_theta_outer: int = 50):
         self.cosmo = cosmo
         self.sel_bias = sel_bias
         self.nfw = nfw
@@ -39,61 +49,135 @@ class SigmaPrj:
         self.bias = sel_bias.bias
         self.grid = sel_bias.grid
         self.xi_NL = sel_bias.xi_NL
+        self.n_theta_inner = n_theta_inner
+        self.n_theta_outer = n_theta_outer
+
+    def _theta_grid_for_R(self, R_val: float, D_A_o: float, theta_max: float):
+        """Split-at-theta_R log-GL grid for one R value.
+
+        Returns (thetas, weights) such that
+            int_0^theta_max f(theta) dtheta ~ sum(weights * f(thetas)).
+        """
+        theta_R = max(R_val / D_A_o, 1e-8)
+        n_in, n_out = self.n_theta_inner, self.n_theta_outer
+        eps_in = 1e-4 * theta_R
+        if theta_R >= theta_max:
+            # Peak outside integration range -- single log-GL segment
+            u, wu = gl_nodes(np.log(max(eps_in, 1e-8)),
+                              np.log(theta_max), n_in + n_out)
+            th = np.exp(u)
+            return th, wu * th
+        # Inner half: [eps, theta_R], log-GL
+        u_in, w_in = gl_nodes(np.log(eps_in), np.log(theta_R), n_in)
+        th_in = np.exp(u_in)
+        wth_in = w_in * th_in
+        # Outer half: [theta_R, theta_max], log-GL
+        u_out, w_out = gl_nodes(np.log(theta_R), np.log(theta_max), n_out)
+        th_out = np.exp(u_out)
+        wth_out = w_out * th_out
+        return (np.concatenate([th_in, th_out]),
+                np.concatenate([wth_in, wth_out]))
 
     def __call__(self, R, lob, zob):
+        """Evaluate <Sigma_prj(R | lob, zob)> for an array of R values."""
         g = self.grid
         R = np.atleast_1d(R).astype(float)
 
-        zlo = max(0.01, zob - 5.0 * sigma_z_of_z(zob))
-        zhi = zob + 5.0 * sigma_z_of_z(zob)
-        zs, wzs = gl_nodes(zlo, zhi, g.Nz)
-        lnMs, wM = gl_nodes(g.ln_M_min, g.ln_M_max, g.NM)
-        Ms = np.exp(lnMs)
-        D_A_o = self.cosmo.chi(zob) / (1.0 + zob)
-        theta_max = 30.0 / D_A_o
-        ths, wth = gl_nodes(1e-5, theta_max, g.Nth)
-        sin_th = np.sin(ths)
-        R_theta_arr = ths * D_A_o                                    # (Nth,)
-
-        pre = self.sel_bias.bias_precompute(lob, zob)
-        bsel_grid = self.sel_bias.b_sel_marginalised(
-            ths, lob, zob, precomp=pre)                              # (Nth,)
-        R_lam_lob = R_lambda(lob)
-
+        # Build the SAME z-grid that sel_bias uses (inherits z_scheme choice).
         chi_o = float(self.cosmo.chi(zob))
-        chi_i_arr = self.cosmo.chi(zs)                               # (Nz,)
-        dV_arr = self.cosmo.dV_dzdOm(zs)                             # (Nz,)
+        D_A_o = chi_o / (1.0 + zob)
+        R_excl = R_lambda(lob) * (1.0 + zob)
 
-        cos_th = np.cos(ths)
-        dchi2 = (chi_i_arr[:, None] ** 2 + chi_o ** 2
-                 - 2.0 * chi_i_arr[:, None] * chi_o * cos_th[None, :])
-        dchi = np.sqrt(np.maximum(dchi2, 0.0))
-        xi = self.xi_NL(dchi.ravel(), zob).reshape(dchi.shape)       # (Nz, Nth)
-        excl = dchi < R_lam_lob                                      # (Nz, Nth)
+        # Build the z-grid via the sel_bias dispatcher
+        from scipy.optimize import bisect
+        from .photoz import zmin4zkernel, zmax4zkernel, w_z, sigma_z
+        try:
+            z_fg_lo = float(bisect(zmin4zkernel, -2.0, 2.0, args=(zob,)))
+            z_bg_hi = float(bisect(zmax4zkernel, -2.0, 2.0, args=(zob,)))
+        except ValueError:
+            sig = float(sigma_z(zob))
+            z_fg_lo, z_bg_hi = max(0.01, zob - sig), zob + sig
 
-        hmf_mz = self.hmf(Ms[:, None], zs[None, :])                  # (NM, Nz)
-        bM_mz = self.bias(Ms[:, None], zs[None, :])                  # (NM, Nz)
+        zs_ref = np.linspace(0.0, 2.0, 2000)
+        chi_ref = self.cosmo.chi(zs_ref)
+        dchi_dz_ref = np.gradient(chi_ref, zs_ref)
+
+        scheme = getattr(self.sel_bias, 'z_scheme', 'E')
+        if scheme == 'E':
+            zs, wzs = self.sel_bias._z_grid_option_E(
+                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
+                zs_ref, chi_ref, dchi_dz_ref)
+        elif scheme == 'D':
+            zs, wzs = self.sel_bias._z_grid_option_D(
+                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
+                zs_ref, chi_ref, dchi_dz_ref)
+        else:  # C
+            zs, wzs = self.sel_bias._z_grid_option_C(
+                lob, zob, g.Nz, chi_o, R_excl, z_fg_lo, z_bg_hi,
+                zs_ref, chi_ref, dchi_dz_ref)
+
+        chi_z = self.cosmo.chi(zs)
+        dV = self.cosmo.dV_dzdOm(zs)
+        wz_kern = w_z(zs, zob)
+
+        # M grid (shared with sel_bias)
+        ln_M_min = np.log(10.0 ** np.log10(self.sel_bias.min_mass4integral))
+        ln_M_max = np.log(10.0 ** self.sel_bias.ln_M_max_log10)
+        lnMs, wM = gl_nodes(ln_M_min, ln_M_max, g.NM)
+        Ms = np.exp(lnMs)
+        M_weight = wM * Ms                    # d ln M Jacobian absorbed
+
+        # Precompute bias quantities at (lob, zob)
+        pre = self.sel_bias.bias_precompute(lob, zob)
+
+        # theta_max = 30 cMpc/h / D_A(zob)  (paper convention)
+        theta_max = 30.0 / D_A_o
 
         out = np.zeros_like(R)
-        for iz, (zi, wzi) in enumerate(zip(zs, wzs)):
-            xi_row = xi[iz]                                          # (Nth,)
-            excl_row = excl[iz]
-            dV_i = dV_arr[iz]
 
-            bracket = 1.0 + bM_mz[:, iz][None, :] * (
-                bsel_grid[:, None] * xi_row[:, None])                # (Nth, NM)
-            bracket[excl_row, :] = 0.0
+        # Outer loop over z (so per-z theta grid for exclusion + split-at-theta_R).
+        for iz in range(zs.size):
+            z = zs[iz]
+            if wz_kern[iz] <= 0.0:
+                continue
+            chi_z_i = chi_z[iz]
+            dV_i = dV[iz]
+            wz_i = wzs[iz]
+            # HMF and halo bias at this z
+            n_mz = self.hmf(Ms, z)
+            bM_mz = self.bias(Ms, z)
 
-            S_mis = np.stack(
-                [self.nfw.sigma_grid(R, R_theta_arr, M, zi) for M in Ms],
-                axis=0)                                              # (NM, Nth, N_R)
+            # Inner loop over R: each R has its own theta grid split at theta_R
+            for iR, R_val in enumerate(R):
+                ths, wth = self._theta_grid_for_R(R_val, D_A_o, theta_max)
+                sin_th = np.sin(ths)
+                R_theta = ths * D_A_o
+                # 3-D separation (for xi_NL and exclusion)
+                cos_th = np.cos(ths)
+                dchi = np.sqrt(np.maximum(
+                    chi_z_i**2 + chi_o**2 - 2 * chi_z_i * chi_o * cos_th, 0.0))
+                xi_vals = self.xi_NL(dchi, zob)
+                if self.sel_bias.exclusion:
+                    xi_vals = np.where(dchi < R_excl, 0.0, xi_vals)
+                # b_sel(theta) at these theta nodes (marginalised over ltr)
+                bsel_th = self.sel_bias.b_sel_marginalised(
+                    ths, lob, zob, precomp=pre)
 
-            wM_M_hmf = wM * Ms * hmf_mz[:, iz]                       # (NM,)
-            wth_sin = wth * sin_th                                   # (Nth,)
-            contrib_M = np.einsum(
-                "Mt,tM,MtR->MR",
-                wM_M_hmf[:, None] * np.ones((1, g.Nth)),             # (NM, Nth)
-                wth_sin[:, None] * bracket,                          # (Nth, NM)
-                S_mis)                                               # (NM, Nth, N_R)
-            out += wzi * dV_i * contrib_M.sum(axis=0)
+                # Sigma_mis(R_val, R_theta, M, z) for all M, stacked (NM, Nth)
+                S_mis = np.stack(
+                    [self.nfw.sigma_grid(np.array([R_val]), R_theta,
+                                          float(M), z).ravel()
+                     for M in Ms], axis=0)             # (NM, Nth)
+
+                # bracket (NM, Nth): 1 + b(M,z) bsel(theta) xi(z,theta)
+                bracket = 1.0 + bM_mz[:, None] * (bsel_th * xi_vals)[None, :]
+
+                # theta integral: sum_t wth_i * 2 pi sin_th_i * bracket * S_mis
+                th_weight = wth * 2.0 * np.pi * sin_th   # (Nth,)
+                # Mass integral: sum_M wM_M * n(M,z) * (theta integral)
+                theta_contrib = np.einsum(
+                    't,Mt,Mt->M', th_weight, bracket, S_mis)     # (NM,)
+                out[iR] += (wz_i * dV_i * wz_kern[iz]
+                            * np.sum(M_weight * n_mz * theta_contrib))
+
         return out
