@@ -1,0 +1,449 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[
+  left = 20mm, right = 20mm, top = 22mm, bottom = 22mm,
+]{geometry}
+
+\usepackage{amsmath,amsfonts,amssymb,bm}
+\usepackage[english]{babel}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+
+\definecolor{harvardcrimson}{HTML}{8C1D40}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=harvardcrimson,
+  citecolor=harvardcrimson,
+  urlcolor=harvardcrimson,
+  hypertexnames=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{harvardcrimson}{\textbf{\(\Delta\Sigma^{\rm prj}\): halo-model derivation}}}
+\lhead{\textcolor{harvardcrimson}{\textbf{J.\,H.\,Esteves}}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+\renewcommand{\baselinestretch}{1.15}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+\newcommand{\lob}{\lambda^{\rm ob}}
+\newcommand{\zob}{z^{\rm ob}}
+\newcommand{\zcls}{z_{\rm cls}}
+\newcommand{\Mcls}{M_{\rm cls}}
+\newcommand{\xinl}{\xi_{\rm NL}}
+\newcommand{\xilin}{\xi_{\rm lin}}
+\newcommand{\xihh}{\xi_{hh}}
+\newcommand{\hMpc}{h^{-1}\,\mathrm{Mpc}}
+\newcommand{\hMsun}{h^{-1}\,M_{\odot}}
+\newcommand{\bsel}{b_{\rm sel}}
+\newcommand{\bhalo}{b_{\rm halo}}
+\newcommand{\bcls}{b_{\rm cls}}
+\newcommand{\Sprj}{\Sigma^{\rm prj}}
+\newcommand{\Smis}{\Sigma_{\rm mis}}
+\newcommand{\DSmis}{\Delta\Sigma_{\rm mis}}
+\newcommand{\DSprj}{\Delta\Sigma^{\rm prj}}
+\newcommand{\avg}[1]{\langle #1 \rangle}
+\newcommand{\Rmis}{R_{\rm mis}}
+\newcommand{\Rexcl}{R_{\rm excl}}
+\newcommand{\texcl}{\theta_{\rm excl}}
+\newcommand{\dO}{d\Omega}
+\newcommand{\chipar}{\chi_\parallel}
+
+\title{\textcolor{harvardcrimson}{\textbf{Halo-model derivation of \(\avg{\DSprj(R\mid\lob,\zob)}\):\\
+can we avoid a second integral?}}}
+\author{Johnny H.\ Esteves}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+We revisit the two-halo projected surface density
+\(\avg{\Sprj}\) of \citet{Costanzi2026} and derive it as the
+cylindrical specialisation of the Cooray--Sheth halo-halo two-halo
+term (\citet{CoorayShethHaloModel}, Eqs.~86--87). We then ask a
+practical question: to get \(\avg{\DSprj(R)}\), do we need a new
+integral, or can we reuse the \(\avg{\Sprj(R)}\) machinery? The
+answer is that the radial-average and subtraction
+\(\bar\Sigma(<R)-\Sigma(R)\) is a linear functional in \(R\) only,
+so it commutes with the \((\theta, z, M)\) integrals: the correct
+recipe is to swap \(\Smis\!\to\!\DSmis\) inside the Eq.~13 kernel
+and leave everything else alone. We also argue that, because
+\(\DSmis(R'\mid\Rmis)\to 0\) for \(\Rmis\gg R'\) (the
+surface-density contrast of a distant off-centre NFW neighbour
+vanishes), the \(\theta\)-upper limit of the integral can be
+reduced from the \(R_{\max}\!=\!30\,\hMpc\) legacy value to a
+physics-driven \(\theta_{\max}\sim\text{a few}\times R'_{\max}/\chi(\zcls)\),
+set by the support of \(\DSmis\) rather than by \(\xinl\) decay
+or by the \texttt{twoD\_prj\_NFW} truncation.
+\end{abstract}
+
+\section{Setup: Cooray--Sheth two-halo term in cylindrical coordinates}
+\label{sec:setup}
+
+\paragraph{Geometry and notation.}
+Fix the cluster at the origin, at comoving distance
+\(\chi(\zcls)\); its mass is \(\Mcls\) and its halo bias
+\(\bcls\equiv b(\Mcls,\zcls)\). A neighbouring halo (the
+two-halo contributor, ``2h'') sits at sky angle \(\theta\) from
+the cluster and redshift \(z\), with mass \(M\) and halo bias
+\(b(M,z)\). We adopt cylindrical coordinates
+\((R,\,\chipar)\) around the cluster's line of sight, with
+\begin{equation}
+R \equiv \theta\,\chi(z) \;\approx\; \theta\,\chi(\zcls) ,
+\qquad
+\chipar \equiv \chi(z) - \chi(\zcls) ,
+\qquad
+r \equiv \sqrt{R^2+\chipar^2} ,
+\label{eq:cyl_coords}
+\end{equation}
+where the small-angle approximation \(R\simeq\theta\,\chi(\zcls)\)
+holds across the photo-\(z\) window (\(|\chipar|\ll\chi(\zcls)\))
+and \(r\) is the 3-D comoving cluster--neighbour separation. The
+exact form used numerically
+(\texttt{sigma\_prj.py}, \S3 of the refactor note) is the chord
+\begin{equation}
+r^2 \;=\; \chi(z)^2 + \chi(\zcls)^2 - 2\,\chi(z)\,\chi(\zcls)\cos\theta ,
+\label{eq:r_exact}
+\end{equation}
+which reduces to~\eqref{eq:cyl_coords} at \(\theta\ll 1\).
+
+\paragraph{Starting point: Cooray--Sheth Eq.~86.}
+The 3-D matter two-halo correlator is
+\citep[Eq.~86]{CoorayShethHaloModel}
+\begin{multline}
+\xi_{2h}(\mathbf{x}-\mathbf{x}')
+= \int\!d\Mcls\,\tfrac{\Mcls n(\Mcls)}{\bar\rho}
+  \int\!dM\,\tfrac{M\,n(M)}{\bar\rho} \\
+  \times \int\!d^3x_c\,u(\mathbf{x}-\mathbf{x}_c\mid\Mcls)
+  \int\!d^3x\,u(\mathbf{x}'-\mathbf{x}\mid M)\,
+  \xihh(\mathbf{x}_c-\mathbf{x}\mid\Mcls,M),
+\label{eq:CS86}
+\end{multline}
+with \(\mathbf{x}_c\) the cluster centre, \(\mathbf{x}\) the 2h
+halo centre, and \(u(\cdot\mid M)\) the unit-normalised density
+profile. For our observable we fix the cluster centre at the
+origin, \(\mathbf{x}_c\equiv\mathbf{0}\), and drop its own profile
+(the 1-halo term is treated separately). What remains is the
+surface density around the cluster contributed by projected
+neighbouring halos:
+\begin{equation}
+\Sprj(R\mid\Mcls,\zcls)
+= \int d^2R_\perp \int d\chipar \int dM\,n(M,z)\,
+  \Sigma_{\rm NFW}\!\bigl(|\mathbf{R}-\mathbf{R}_\perp|\,\big|\,M,z\bigr)\,
+  \xihh\!\bigl(r\,\big|\,\Mcls,M\bigr),
+\label{eq:cyl_raw}
+\end{equation}
+where \(\mathbf{R}_\perp\) is the transverse offset of the
+neighbour from the cluster line of sight (\(|\mathbf{R}_\perp|=R\)),
+\(\chipar\) is its LoS offset, and
+\(\Sigma_{\rm NFW}(R'\mid M,z)\) is the centred NFW surface
+density of the neighbour evaluated at 2-D radius \(R'\) from its
+own centre.
+
+\paragraph{Change of coordinates to \((\theta, z)\).}
+Swap the neighbour's \((\mathbf{R}_\perp,\chipar)\) for the
+observable pair \((\theta, z)\). The volume element becomes
+\begin{equation}
+d^2R_\perp\,d\chipar
+\;=\; 2\pi\sin\theta\,d\theta \,\cdot\, \frac{dV}{dz\,\dO}(z)\,dz .
+\label{eq:volume_element}
+\end{equation}
+Azimuth-averaging \(\Sigma_{\rm NFW}(|\mathbf{R}-\mathbf{R}_\perp|)\)
+around the neighbour's off-centre offset \(\Rmis\equiv R\)
+produces the \emph{miscentered} NFW surface density,
+\begin{equation}
+\Smis(R'\mid M,z,\Rmis)
+= \int_0^{2\pi}\!d\varphi\;
+  \Sigma_{\rm NFW}\!\Bigl(\sqrt{R'^{\,2}+\Rmis^2-2R'\Rmis\cos\varphi}
+  \,\Big|\,M,z\Bigr),
+\label{eq:Smis_def}
+\end{equation}
+where \(R'\) is the radius at which the cluster observer measures
+\(\Sprj\). For the cluster--neighbour geometry
+\(\Rmis = \theta\,\chi(\zcls)\) (equation~\ref{eq:cyl_coords}).
+Equation~\eqref{eq:cyl_raw} becomes
+\begin{multline}
+\Sprj(R'\mid\Mcls,\zcls) =
+\int d\theta\sin\theta\int dz\,\frac{dV}{dz\,\dO}(z)
+\int dM\,n(M,z) \\
+\times\; \xihh\!\bigl(r\mid\Mcls,M\bigr)\,
+\Smis\!\bigl(R'\mid M,z,\Rmis=\theta\,\chi(\zcls)\bigr),
+\label{eq:two_halo_cyl}
+\end{multline}
+with \(r\) given by~\eqref{eq:r_exact}.
+
+\paragraph{Cooray--Sheth Eq.~87 step.}
+Deterministic linear halo bias replaces the halo-halo correlator
+by matter clustering times two bias factors,
+\(\xihh(r\mid\Mcls,M)\approx\bcls\,b(M,z)\,\xilin(r)\).
+Factoring \(\bcls\) out:
+\begin{multline}
+\Sprj(R'\mid\Mcls,\zcls) \approx \bcls
+\int d\theta\sin\theta\int dz\,\frac{dV}{dz\,\dO}
+\int dM\,n(M,z)\,b(M,z)\\
+\times\; \xilin(r)\,\Smis\!\bigl(R'\mid M,z,\theta\,\chi(\zcls)\bigr).
+\label{eq:CS87_cyl}
+\end{multline}
+
+\paragraph{From mass-selected to richness-selected.}
+\citet{Costanzi2026} upgrade \eqref{eq:CS87_cyl} in three steps to
+describe the observable around an optically selected cluster of
+observed richness \(\lob\):
+(i) \(\xilin\to\xinl\) (halofit), because the 1h--2h transition at
+\(\sim\Rexcl\) sits in the non-linear regime;
+(ii) \(\xinl\to 0\) for \(\theta<\texcl(z)\) (LoS-slab exclusion);
+(iii) the cluster's bias \(\bcls\) is replaced by the
+scale-dependent \emph{selection-affected} bias
+\(\bsel(\theta;\lob,\zob)\), which absorbs red-galaxy selection
+effects. Adding the uncorrelated cosmological mean as a \(+1\)
+inside the bracket yields the master equation
+(\citealt{Costanzi2026}, Eq.~13):
+\begin{multline}
+\avg{\Sprj(R'\mid\lob,\zob)} =
+\int d\theta\sin\theta\int dz\,\frac{dV}{dz\,\dO}\int dM\,n(M,z)\\
+\times\;\bigl[\,1 + b(M,z)\,\bsel(\theta;\lob,\zob)\,\xinl(r,\zob)\,\bigr]\,
+\Smis\!\bigl(R'\mid M,z,\Rmis=\theta\,\chi(\zcls)\bigr).
+\label{eq:Sprj}
+\end{multline}
+The \(1\) piece integrates to a spatially near-uniform
+\(\Sigma_{\rm rnd}(R')\) (the cosmological mean projected surface
+density in the photo-\(z\) window); the \(b\,\bsel\,\xinl\) piece
+is the correlation-excess two-halo contribution
+\(\Sigma_{\rm cl+LSS}(R')\).
+
+\section{\texorpdfstring{The target observable: \(\avg{\DSprj(R')}\)}{The target observable: DeltaSigma prj}}
+\label{sec:dsprj}
+
+The lensing observable is the \emph{excess} surface density,
+\begin{equation}
+\avg{\DSprj(R')} \equiv \bar\Sigma^{\rm prj}(<R') - \avg{\Sprj(R')},
+\qquad
+\bar\Sigma^{\rm prj}(<R') \equiv \frac{2}{R'^{\,2}}\int_0^{R'}\!\!
+s\,\avg{\Sprj(s)}\,ds .
+\label{eq:DSprj_def}
+\end{equation}
+
+\paragraph{Linearity in \(R'\).}
+Both \(\bar\Sigma(<R')\) and the subtraction act only on the
+radial argument \(R'\). The outer integrals in~\eqref{eq:Sprj}
+(over \(\theta, z, M\)) are \(R'\)-independent, so they commute
+with \(\Delta[\,\cdot\,]\):
+\begin{multline}
+\avg{\DSprj(R'\mid\lob,\zob)} =
+\int d\theta\sin\theta\int dz\,\frac{dV}{dz\,\dO}\int dM\,n(M,z)\\
+\times\;\bigl[\,1 + b(M,z)\,\bsel(\theta;\lob,\zob)\,\xinl(r,\zob)\,\bigr]\,
+\DSmis\!\bigl(R'\mid M,z,\Rmis=\theta\,\chi(\zcls)\bigr),
+\label{eq:DSprj}
+\end{multline}
+where the only change from~\eqref{eq:Sprj} is
+\begin{equation}
+\Smis\!\bigl(R'\mid M,z,\Rmis\bigr)
+\;\longrightarrow\;
+\DSmis\!\bigl(R'\mid M,z,\Rmis\bigr)
+\equiv \bar\Sigma_{\rm mis}(<R'\mid M,z,\Rmis) - \Smis(R'\mid M,z,\Rmis).
+\label{eq:DSmis_def}
+\end{equation}
+The machinery that computes the \((\theta, z, M)\) integral (the
+split-at-breakpoints \(\theta\)-grid with per-\(R'\) nodes, the
+photo-\(z\) \(z\)-slab, the exact \(r\) form, the exclusion cut)
+is preserved --- \(\DSmis\) just replaces \(\Smis\) as a lookup
+against the offset-NFW tables.
+
+\paragraph{Does the \(\Sigma_{\rm rnd}\) piece drop out?}
+In the idealised sky-limit \(\theta_{\max}\!\to\!\infty\) with
+infinitely narrow 1-halo profiles, the \(1\) piece gives a
+spatially uniform \(\Sigma_{\rm rnd}\), for which
+\(\bar\Sigma(<R')\equiv\Sigma_{\rm rnd}\) and thus
+\(\Delta\Sigma_{\rm rnd}(R')=0\). This is the classical
+\citet{Sheldon2009}--\citet{Zu2014}--\citet{Melchior2017}
+statement that the mean photo-\(z\)-window surface density cancels
+from the measured excess. Numerically the package truncates
+\(\theta\) at \(\theta_{\max}=R_{\max}/\chi(\zcls)\) with
+\(R_{\max}=30\,\hMpc\) (\texttt{config.R\_MAX\_CMPCH}), so
+\(\Delta\Sigma_{\rm rnd}\) is not exactly zero but a boundary term
+that scales with \(R_{\max}\). We therefore recommend, by analogy
+with \(\avg{\Sprj}\), returning only the cl+LSS piece by default:
+\begin{multline}
+\avg{\DSprj_{\rm cl+LSS}(R')}
+= \int d\theta\sin\theta\int dz\,\frac{dV}{dz\,\dO}\int dM\,n(M,z)\\
+\times\; b(M,z)\,\bsel(\theta)\,\xinl(r,\zob)\,
+\DSmis\!\bigl(R'\mid M,z,\theta\,\chi(\zcls)\bigr).
+\label{eq:DSprj_cl}
+\end{multline}
+
+\section{\texorpdfstring{Choosing \(\theta_{\max}\) for \(\avg{\DSprj}\)}{Choosing theta_max for DeltaSigma prj}}
+\label{sec:theta_max}
+
+The \(\theta\)-upper limit of \eqref{eq:Sprj}/\eqref{eq:DSprj} is
+an artefact of numerical truncation; the physics runs to
+\(\theta\!\to\!\pi\). For \(\avg{\Sprj}\) the legacy choice is
+\(R_{\max}=30\,\hMpc\), so that
+\(\theta_{\max}=R_{\max}/\chi(\zcls)\), matching the hard
+truncation in Matteo's \texttt{twoD\_prj\_NFW} notebook
+(\texttt{config.R\_MAX\_CMPCH}, \S5.1 of the refactor note). At
+that scale the \texttt{cl+LSS} piece is converged to \(<\!1\%\)
+because \(\xinl(r)\) has decayed, but the \texttt{rnd} piece
+grows by \(\sim 15\%\) going \(30\!\to\!60\,\hMpc\): the flat
+large-\(\theta\) plateau of the \texttt{rnd} integrand
+never dies \citep[see][\S8]{SigmaPrjRefactor}. That is why the
+package returns \texttt{cl+LSS} by default for \(\avg{\Sprj}\).
+
+\paragraph{What changes for \(\avg{\DSprj}\).}
+Two facts together imply that the \(\theta_{\max}\) requirement
+for \(\avg{\DSprj}\) is strictly \emph{weaker} than for
+\(\avg{\Sprj}\):
+\begin{enumerate}\setlength\itemsep{2pt}
+  \item \textbf{The \texttt{rnd} piece is dropped by design.}
+        Following~\eqref{eq:DSprj_cl}, \(\avg{\DSprj}\) in this
+        package is the \texttt{cl+LSS}-only integral --- the
+        long \(\theta\)-plateau of the \texttt{rnd} piece simply
+        does not appear in the observable.
+  \item \textbf{The \texttt{cl+LSS} \(\theta\)-integrand of
+        \(\avg{\DSprj}\) is itself bounded in \(\theta\).}
+        \(\DSmis(R'\mid\Rmis)\) has compact support around
+        \(\Rmis\sim R'\) and decays in both limits
+        (\(\Rmis\ll R'\) gives
+        \(\DSmis\!\to\!2\pi\Delta\Sigma_{\rm NFW}(R')\), falling
+        in \(R'\); \(\Rmis\gg R'\) gives
+        \(\Smis\!\to\!2\pi\Sigma_{\rm NFW}(\Rmis)\),
+        \(R'\)-independent, so
+        \(\DSmis=\bar\Sigma_{\rm mis}-\Smis\!\to\!0\)). In contrast, the
+        \(\avg{\Sprj}\) \texttt{cl+LSS} integrand inherits the
+        slow plateau of \(\Smis(R'\mid\Rmis)\) at large
+        \(\Rmis\), which in numerical plots shows up as a near-constant
+        \(N_{\rm cl+LSS}(\theta)\) beyond \(\theta_\lambda\).
+\end{enumerate}
+In other words, the two mechanisms that forced
+\(\theta_{\max}\!=\!30\,\hMpc/\chi(\zcls)\) for \(\avg{\Sprj}\)
+--- the \texttt{rnd} plateau \emph{and} the flat
+\(\Smis\)-kernel at large \(\Rmis\) --- both go away when we
+switch to \(\DSprj_{\rm cl+LSS}\). The remaining constraint on
+\(\theta_{\max}\) is only that we resolve the support of
+\(\DSmis(R'\mid\theta\,\chi(\zcls))\), which is set by the
+largest measurement radius \(R'_{\max}\).
+
+\paragraph{Recipe.}
+Take \(\theta_{\max}\) as the first of
+\(\{\theta_{R'_{\max}}\) times a safety factor,
+\(\theta_\lambda\) times a safety factor\(\}\) that is large
+enough to include the tail of the ring peak at
+\(\Rmis=R'_{\max}\). Empirically,
+\begin{equation}
+\boxed{\;
+\theta_{\max}^{\Delta\Sigma}
+\;=\;
+\frac{C\,R'_{\max}}{\chi(\zcls)} ,
+\qquad C\simeq 3 ,\;
+R'_{\max}\equiv\max_i R'_i .
+\;}
+\label{eq:theta_max_DS}
+\end{equation}
+For a DES-Y3-style setup with
+\(R'_{\max}\!=\!10\,\hMpc\) and \(\zcls\!=\!0.5\),
+\(\theta_{\max}^{\Delta\Sigma}\!\approx\!30/\chi(\zcls)\), so
+numerically it happens to coincide with the \(\avg{\Sprj}\)
+default; for \(R'_{\max}\!=\!3\,\hMpc\) it drops to
+\(\sim 9/\chi(\zcls)\), a \(\sim 3\times\) cheaper
+\(\theta\)-integral. Do \emph{not} push \(C\) below \(\sim 2\):
+the ring peak of \(\DSmis\) at \(\Rmis=R'_{\max}\) extends
+modestly beyond \(\theta_{R'_{\max}}\) because the NFW neighbour
+has a finite \(R_s\sim 0.3\,\hMpc\).
+
+\paragraph{\(\xinl\)-decay is not the binding constraint.}
+One might worry that \(\xinl(r)\) support extends to tens of
+\(\hMpc\) and therefore forces \(\theta_{\max}\) large even for
+\(\avg{\DSprj}\). It does not, for the same reason the
+\texttt{rnd} plateau drops out: at large \(\theta\) the
+\(\DSmis\)-kernel is what zeros the integrand, not \(\xinl\).
+\(\xinl\) decay would bind \(\theta_{\max}\) only for an
+observable where \(\DSmis\) is replaced by an
+\(R'\)-independent kernel (e.g.\ the \(\avg{\Sprj}\) \texttt{rnd}
+piece). Here, taking \(\theta_{\max}\) out past
+\(\theta_{R'_{\max}}\!\times\!(\text{few})\) is wasted work.
+
+\paragraph{Regression check.}
+An analogue of \texttt{validations/sigma\_prj\_theta\_max.py}
+for the \(\DSprj_{\rm cl+LSS}\) observable should show:
+\begin{itemize}\setlength\itemsep{2pt}
+  \item moving \(\theta_{\max}\!:\!R_{\max}=30\!\to\!60\,\hMpc\)
+        leaves \(\DSprj_{\rm cl+LSS}(R')\) unchanged to
+        \(\ll 1\%\) on every \(R'\!\le\!R'_{\max}\),
+  \item reducing \(\theta_{\max}\!:\!R_{\max}=30\!\to\!3\,R'_{\max}\)
+        (\(\approx 9\,\hMpc\) for \(R'_{\max}\!=\!3\))
+        also leaves \(\DSprj_{\rm cl+LSS}\) unchanged to
+        \(\ll 1\%\),
+  \item reducing further (e.g.\ \(R_{\max}\!=\!R'_{\max}\))
+        starts to clip the ring-peak tail at \(\Rmis=R'_{\max}\)
+        and produces a \(\gtrsim 1\%\) bias at
+        \(R'\!\sim\!R'_{\max}\).
+\end{itemize}
+The \(C\!=\!3\) floor in~\eqref{eq:theta_max_DS} is set to leave
+a healthy margin before that last regime.
+
+\section{What changes in the code}
+
+In \texttt{sigma\_prj.py}, the only functional change needed to
+compute \(\avg{\DSprj(R')}\) is to replace the kernel lookup
+\begin{center}
+\texttt{NFWMiscentered.sigma\_grid(R, Rtheta, M, z)}
+\(\longrightarrow\)
+\texttt{NFWMiscentered.delta\_sigma\_grid(R, Rtheta, M, z)}
+\end{center}
+where \texttt{delta\_sigma\_grid} returns
+\(\bar\Sigma_{\rm mis}(<R'\mid M,z,\Rmis)-\Smis(R'\mid M,z,\Rmis)\) at the
+same offset-NFW lookup resolution and with the same factor-of-2
+convention as \texttt{sigma\_grid}. The second change is to make
+the \(\theta\)-upper limit adaptive to the requested \(R'\)-grid
+rather than fixed at \texttt{R\_MAX\_CMPCH}: set
+\(R_{\max}^{\Delta\Sigma} = C\cdot R'_{\max}\) with \(C\!=\!3\)
+(eq.~\ref{eq:theta_max_DS}), plumbed into the \(\theta\)-grid
+constructor in place of the hard-coded \(30\,\hMpc\). Everything
+else --- the \(\theta\)-outer loop, the split-at-breakpoints
+\(\theta\)-grid with per-\(R'\) nodes, the
+ring\,\(\cup\)\,outer-fg\,\(\cup\)\,outer-bg \(z\)-grid, \(\bsel\)
+evaluation --- is preserved, and the \texttt{cl+LSS}/\texttt{rnd}
+decomposition becomes moot because the default return is
+\texttt{cl+LSS} only (eq.~\ref{eq:DSprj_cl}).
+
+\begin{thebibliography}{9}
+\bibitem[Cooray \& Sheth(2002)]{CoorayShethHaloModel}
+Cooray, A., \& Sheth, R. 2002, Phys.\ Rep., 372, 1.
+Eqs.~86--87 of the halo-model review.
+
+\bibitem[Costanzi et al.(2026)]{Costanzi2026}
+Costanzi, M., Wu, H.-Y., Esteves, J.~H., Grandis, S., To, C., \&
+Aguena, M., 2026, Phys.~Rev.~D (accepted), arXiv:2604.05833.
+\(\bsel\), \(\avg{\Sprj}\) (Eq.~13).
+
+\bibitem[Esteves(2026)]{SigmaPrjRefactor}
+Esteves, J.~H.\ 2026, \texttt{richness\_selection} numerical
+recipe, \texttt{docs/sigma\_prj\_refactor.md}. \(\avg{\Sprj}\)
+\(\theta\)-grid, \(R_{\max}\) sensitivity, \texttt{rnd}/\texttt{cl+LSS}
+decomposition.
+
+\bibitem[Sheldon et al.(2009)]{Sheldon2009}
+Sheldon, E.~S., et al.\ 2009, ApJ, 703, 2217. Random-point
+subtraction convention for cluster lensing.
+
+\bibitem[Zu et al.(2014)]{Zu2014}
+Zu, Y., Weinberg, D.~H., Rozo, E., Sheldon, E.~S., Tinker, J.~L.,
+\& Becker, M.~R.\ 2014, MNRAS, 439, 1628.
+
+\bibitem[Melchior et al.(2017)]{Melchior2017}
+Melchior, P., et al.\ 2017, MNRAS, 469, 4899. DES Y1 cluster
+lensing; uses random-point subtraction to remove \(\Sigma_{\rm rnd}\).
+\end{thebibliography}
+
+\end{document}

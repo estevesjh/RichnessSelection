@@ -254,14 +254,15 @@ class SigmaPrj:
 
     # ---------------- public -------------------------------------------------
 
-    def __call__(self, R, lob, zob, *, return_decomposition: bool = False):
-        R = np.atleast_1d(R).astype(float)
-        ctx = self._build_zM_context(lob, zob)
-        pre = self.sel_bias.bias_precompute(lob, zob)
-        thetas, w_theta, th_info = self._theta_grid(lob, zob, R, ctx)
-        bsel_vals = self._bsel_at(thetas, lob, zob, pre)
+    def _kernel_closure(self, R, ctx):
+        """Return a callable ``kernel(theta) -> (NM, NR) Sigma_mis``.
 
-        # Sigma_mis closure bound to this R and ctx
+        Subclasses override this to swap the underlying lookup spline
+        (e.g. ``DeltaSigmaPrj`` substitutes ``_dsig_spl``).  The
+        factor-of-2 / rs*rho_s prefactor is unchanged: both the Sigma
+        and the Delta-Sigma tables share the same half-paper
+        convention (see ``nfw.py`` module docstring).
+        """
         rs_M = ctx["rs_M"]; rho_s = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
         _spl = self.nfw._spl
         _lnx_lo = self.nfw._lnx_lo; _lnx_hi = self.nfw._lnx_hi
@@ -270,7 +271,7 @@ class SigmaPrj:
         ln_R = np.clip(ln_R, _lnx_lo, _lnx_hi)
         prefac_M = (2.0 * (2.0 * np.pi) * rs_M * rho_s)     # (NM,)
 
-        def Sigma_mis_per_theta(theta):
+        def kernel(theta):
             R_theta = theta * D_A_o
             lnxmis = np.log(R_theta / rs_M)                  # (NM,)
             lnxmis = np.clip(lnxmis, _lnxmis_lo, _lnxmis_hi)
@@ -279,8 +280,16 @@ class SigmaPrj:
                 out[iM] = prefac_M[iM] * np.exp(
                     _spl(lnxmis[iM:iM + 1], ln_R[iM])).ravel()
             return out
+        return kernel
 
-        ctx["Sigma_mis_per_theta"] = Sigma_mis_per_theta
+    def __call__(self, R, lob, zob, *, return_decomposition: bool = False):
+        R = np.atleast_1d(R).astype(float)
+        ctx = self._build_zM_context(lob, zob)
+        pre = self.sel_bias.bias_precompute(lob, zob)
+        thetas, w_theta, th_info = self._theta_grid(lob, zob, R, ctx)
+        bsel_vals = self._bsel_at(thetas, lob, zob, pre)
+
+        ctx["Sigma_mis_per_theta"] = self._kernel_closure(R, ctx)
 
         out_rnd = np.zeros_like(R)
         out_cl = np.zeros_like(R)

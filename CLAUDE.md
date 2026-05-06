@@ -18,9 +18,11 @@ pip install -e .                                    # editable install
 pytest tests/                                       # ~25 s, 45 tests
 pytest tests/test_selection_function.py::TestKi     # single test class
 pytest tests/test_sigma_prj.py                      # Sigma_prj regressions
+pytest tests/test_delta_sigma_prj.py                # DeltaSigma_prj regressions
 pytest tests/ -k sigma_prj                          # keyword filter
 python examples/01_sigma_prj.py                     # end-to-end timing run
-python validations/sigma_prj_diagnostics.py         # scipy.quad regression
+python validations/sigma_prj_diagnostics.py         # scipy.quad regression for Σ^prj
+python validations/delta_sigma_prj_diagnostics.py   # scipy.quad regression for ΔΣ^prj
 python validations/sigma_prj_theta_lambda.py        # per-bin θ_λ table, etc.
 ```
 
@@ -44,14 +46,16 @@ Cached results keyed by `(lob, zob)` live in `self._cache`; `bias_precompute →
 
 **`SigmaPrj.__call__` (θ-outer refactor)** — the integrand `[1 + b·b_sel·ξ_NL]·Σ_mis` is split into `rnd` (the `1`) and `cl+LSS` (the `b·b_sel·ξ_NL`). **Default return is the `cl+LSS` piece** — the two-halo correlation excess that matches `ΔΣ_2h` in the lensing literature; `return_decomposition=True` exposes `{rnd, cl, total}`. θ is the outer loop; inside, the z-integrals of `n(M,z)·outer_weight` and `n·b·outer_weight·ξ_NL` contract with a z-independent `Σ_mis(M, R | R_mis=θ·D_A)` stack. θ-grid is log-GL on segments split at `{θ_excl,o, every requested θ_R, θ_λ, 2θ_λ, θ_max}` — the per-R breakpoint rule is load-bearing (without it, R=3 residual is +1.3 %; with it, +0.01 %). LoS-slab exclusion (`θ > θ_excl(z)`), not 3-D ball. `R_max_cMpch` (default 30) sets `θ_max = R_max/D_A(z_ob)`; see `docs/sigma_prj_refactor.md` for the full recipe.
 
+**`DeltaSigmaPrj(SigmaPrj)` (`delta_sigma_prj.py`)** — mirrors `SigmaPrj` for the lensing excess `⟨ΔΣ^prj(R | λ^ob, z^ob)⟩`. Because `Δ[·] = Σ̄(<R) − Σ(R)` is a linear functional in `R` only, it commutes with the `(θ, z, M)` outer integrals: the *only* change from `SigmaPrj` is swapping `NFWMiscentered._spl` → `_dsig_spl` inside the per-θ kernel closure. The table `log_deltasigma_single.txt` shares the same half-paper convention as `log_sigma_single.txt` (factor-of-2 verified at `R_mis→0` against Wright & Brainerd 2000). Two behavioural differences vs `SigmaPrj`: (i) default return is the same `cl+LSS` piece but with a physical rationale — `ΔΣ_rnd` vanishes in the full-aperture limit, unlike `Σ_rnd`; (ii) `R_max_cMpch` defaults to an **adaptive** `3·max(R)` rule (`R_max_factor=3.0`) because `ΔΣ_mis(R | R_mis≫R)→0` bounds the θ-integrand, unlike `Σ_mis` which plateaus. See `docs/delta_sigma_prj_derivation.tex` for the halo-model derivation and the θ_max argument.
+
 **`selection_function/` (fully tensorised)** — `number_counts.N_ij` is a 2-D GL quadrature over `(ln M, z)`; `S_i`/`S_threshold` use the closed-form EMG kernel `K_i` from `kernels.py` (erfcx-safe). `survey.py` provides `Ω(z)` models ported from `y3_cluster_cpp` — pass `solid_angle=omega_z_des` to `N_ij` to reproduce realistic `N(z)` rolloff.
 
-**NFW convention pitfall (`nfw.py`)** — the bundled lookup table stores `⟨Σ_NFW⟩_phi / (2π R_s ρ_s)`, which is **half** Costanzi 2026 eq. 14's definition. `sigma_grid` applies the factor of 2 so callers see paper-convention values. Do not add another factor of 2 in `SigmaPrj`.
+**NFW convention pitfall (`nfw.py`)** — the bundled `log_sigma_single.txt` table stores `⟨Σ_NFW⟩_phi / (2π R_s ρ_s)`, which is **half** Costanzi 2026 eq. 14's definition. `sigma_grid` applies the factor of 2 so callers see paper-convention values. The companion `log_deltasigma_single.txt` (new; powers `NFWMiscentered.delta_sigma_grid` and `DeltaSigmaPrj`) shares the same half-paper convention — verified at `R_mis→0` against the Wright & Brainerd 2000 analytical `ΔΣ_NFW` to 4 decimals. Do not add another factor of 2 in `SigmaPrj` or `DeltaSigmaPrj`.
 
 ## External data
 
 `data/` ships the inputs the package reads at runtime:
-- `nfw_off_center/` — the three `table_1000_1e-03_5e+03_*.txt` NFW lookup files.
+- `nfw_off_center/` — four `table_1000_1e-03_5e+03_*.txt` NFW lookup files: `single_logx.txt` (`ln R/R_s` axis), `single_logxmis.txt` (`ln R_mis/R_s` axis), `log_sigma_single.txt` (`Σ_mis`), `log_deltasigma_single.txt` (`ΔΣ_mis`).
 - `omega_z_sdss.txt`, `z_kernel_5perc_ext_z01.txt`, `prj_params_DESY3_lss_lin_dep_getdist_v1.txt`.
 
 If you edit `NFW_TABLE_DIR` in `config.py` or add a new table-path indirection, verify both `NFWMiscentered` (and anything else reading `data/`) resolve.
@@ -73,4 +77,4 @@ If you edit `NFW_TABLE_DIR` in `config.py` or add a new table-path indirection, 
 
 ## Numerical recipe
 
-`docs/sigma_prj_refactor.md` is the authoritative step-by-step recipe for computing `⟨Σ^prj⟩`: integration limits, exclusion convention, split-at-breakpoints θ-grid, θ-outer order, pseudocode, tolerances, and regression checks. Read this before modifying `sigma_prj.py`.
+`docs/sigma_prj_refactor.md` is the authoritative step-by-step recipe for computing `⟨Σ^prj⟩`: integration limits, exclusion convention, split-at-breakpoints θ-grid, θ-outer order, pseudocode, tolerances, and regression checks. Read this before modifying `sigma_prj.py`. The `⟨ΔΣ^prj⟩` derivation and the `θ_max`-adaptive argument are in `docs/delta_sigma_prj_derivation.tex` (§2 for the linearity/kernel-swap argument, §3 for the `R_max = 3·max(R)` recipe).

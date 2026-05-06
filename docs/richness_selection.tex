@@ -62,6 +62,9 @@
 \newcommand{\rhoprj}{\rho^{\rm prj}}
 \newcommand{\Sprj}{\Sigma^{\rm prj}}
 \newcommand{\Smis}{\Sigma_{\rm mis}}
+\newcommand{\DSprj}{\Delta\Sigma^{\rm prj}}
+\newcommand{\DSmis}{\Delta\Sigma_{\rm mis}}
+\newcommand{\Rmis}{R_{\rm mis}}
 \newcommand{\avg}[1]{\langle #1 \rangle}
 
 \title{\texorpdfstring{%
@@ -397,24 +400,107 @@ contaminating halo at 2-D radius \(R_h\) from its own centre.
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.92\textwidth]{figs/pedag_sigma_prj.png}
-\caption{Two-halo \(\avg{\Sprj(R\,|\,\lob,\zob)}\) at
-\(\zob=0.5\), three richness bins. Dotted lines mark the per-bin
-exclusion scale \(R_{\rm excl}=R_\lambda(\lob)(1+\zob)\), which
-separates the miscentered-NFW-dominated inner regime from the
-correlated \(\bsel\!\cdot\!\xinl\) large-scale regime.}
+\caption{Two-halo \(\avg{\Sprj(R\,|\,\lob,\ltr,\zob)}\) at
+\((\lob,\zob)=(20,0.5)\), varying the projection contamination
+\(\dprj\equiv\lob-\ltr\) (same colour palette as Fig.~1). \(b_{\rm sel}\)
+is evaluated at fixed \(\ltr\) (not \(\ltr\)-marginalised) to match the
+Fig.~1 exercise. Dotted line: \(R_{\rm excl}=R_\lambda(\lob)(1+\zob)\),
+separating the miscentered-NFW-dominated inner regime from the
+correlated \(\bsel\!\cdot\!\xinl\) large-scale regime. \(\dprj=0\)
+sits anomalously low at small \(R\) because both \(b_{\rm sel}\) plateaus
+collapse to the halo-bias aggregate in that limit.}
 \label{fig:pedag_sigmaprj}
 \end{figure}
 
+\subsection{Lensing excess \(\avg{\DSprj(R\mid\lob,\zob)}\)}
+\label{sec:DeltaSprj}
+
+The two-halo observable returned by \texttt{DeltaSigmaPrj} is the
+radial excess of \eqref{eq:Sprj},
+\begin{equation}
+\avg{\DSprj(R\mid\lob,\zob)} \;\equiv\;
+\bar\Sigma^{\rm prj}(<\!R\mid\lob,\zob) \;-\;
+\avg{\Sprj(R\mid\lob,\zob)}.
+\label{eq:DSprj_def}
+\end{equation}
+Because \(R \to \bar{\Sigma}(<\!R)-\Sigma(R)\) is a linear functional
+in the radial argument only, it commutes with the
+\((\theta,z,M)\) integrals in eq.~\eqref{eq:Sprj}: the pipeline of
+\S\ref{sec:theta_split}--\ref{sec:zgrid} carries over unchanged, and
+the only substitution is at the NFW lookup,
+\(\Smis\!\to\!\DSmis\equiv\bar\Sigma_{\rm mis}(<\!R)-\Smis(R)\), evaluated via
+the companion \texttt{log\_deltasigma\_single} table shipped with
+the offset-NFW kit. The full derivation, the scale argument for
+adaptive \(\theta_{\max}\), and the factor-of-2 convention
+cross-check against the analytical Wright \& Brainerd 2000 centred
+NFW \(\Delta\Sigma\) live in \texttt{docs/delta\_sigma\_prj\_derivation.tex}.
+
+\paragraph{Profile vs projection contamination.}
+Figure~\ref{fig:pedag_delta_sigma} shows
+\(\avg{\DSprj(R\mid\lob,\ltr,\zob)}\) at \((\lob,\zob)=(20,0.5)\),
+varying \(\dprj=\lob-\ltr\) --- the same sweep as Fig.~1
+(\(\bsel\)-sigmoid) and Fig.~\ref{fig:pedag_sigmaprj}
+(\(\avg{\Sprj}\)). The shape is the familiar two-halo lensing bump
+peaking around \(\sim R_\lambda\) (dotted \(R_{\rm excl}\) marker);
+amplitude scales with \(\dprj\) because both \(b_{\rm sel}\)
+plateaus (\(\bsmall,\blarge\)) grow with projection contamination
+through Steps~4--5 of the bias pipeline.
+
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.82\textwidth]{figs/pedag_xi_nl.png}
-\caption{Nonlinear matter correlation function \(\xinl(r,z)\) from
-halofit + FFTlog (\texttt{xi\_nl.py}). Dashed line: \(R_{\rm excl}\)
-at the reference point \((\lob,\zob)=(20,0.5)\). The near-power-law
-\(\xinl\propto r^{-1.7}\) between \(\sim 0.1\) and
-\(\sim 5\,\hMpc\) drives the exclusion-peak structure of the
-\(z\)-integrand in \S\ref{sec:fz_structure}.}
-\label{fig:pedag_xinl}
+\includegraphics[width=0.92\textwidth]{figs/pedag_delta_sigma_prj.png}
+\caption{\(\avg{\DSprj(R\,|\,\lob,\ltr,\zob)}\) at
+\((\lob,\zob)=(20,0.5)\), varying \(\dprj=\lob-\ltr\)
+(\texttt{cl+LSS} correlation-excess piece, the class default).
+Dotted line: \(R_{\rm excl}=R_\lambda(\lob)(1+\zob)\). Inner
+cut-off from the LoS-slab exclusion; outer decay set by the joint
+support of \(\DSmis(R\mid\Rmis\!\sim\!R)\) and \(\xinl(r)\).}
+\label{fig:pedag_delta_sigma}
+\end{figure}
+
+\paragraph{Precision vs \texttt{scipy.quad}.}
+Figure~\ref{fig:dsprj_quad} compares the production
+\texttt{DeltaSigmaPrj} (\(n_{\rm per\_seg}\!=\!30\),
+\(N_M\!=\!24\), \(N_z\!=\!80\), \(R_{\max}=30\,\hMpc\)) against a
+nested-\texttt{scipy.quad} reference built by
+\texttt{validations/delta\_sigma\_prj\_diagnostics.py} at the same
+\((\lob,\zob)=(20,0.5)\) and \(R\in\{0.3,1,3,10\}\,\hMpc\). The
+reference is parallelised across the 8 \((R,\text{kind})\) jobs via
+\texttt{multiprocessing.Pool} (8-core wall clock \(\sim3\,\)min vs
+\(\sim35\,\)min serial); quad tolerances
+\(\epsilon_\theta\!=\!3\!\times\!10^{-3}\),
+\(\epsilon_z\!=\!10^{-2}\). The residual panel shows
+sub-\(0.5\%\) agreement on \(R\!\ge\!1\,\hMpc\) on both
+\texttt{total} and \texttt{cl}. At \(R\!=\!0.3\) the residual reaches
+\(\sim 2\%\): the \([1+b\,\bsel\,\xinl]\) bracket changes amplitude
+sharply where \(\theta_{\rm excl}(z)\) and
+\(\theta_{R}\!=\!R/D_A(\zob)\) coincide, and \texttt{scipy.quad}'s
+adaptive refinement issues an \texttt{IntegrationWarning} at that
+crossing. Tightening the quad tolerances by \(3\!\times\) shifts the
+reference by \(<\!0.01\%\) (so the quad itself is converged), and
+the GL-on-segments production side is self-converged to
+\(<\!0.5\%\) between \(n_{\rm per\_seg}\!=\!30\) and \(120\): the
+residual at \(R\!=\!0.3\) is therefore a real
+quadrature-method difference at the smallest \(R\), not a bug in
+either side. The regression test
+(\texttt{tests/test\_delta\_sigma\_prj.py}) encodes this as a
+per-\(R\) tolerance (\(0.5\%\) on \(R\!\ge\!1\), \(2.5\%\) at
+\(R\!=\!0.3\)).
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/pedag_delta_sigma_quad.png}
+\caption{Precision audit of production \texttt{DeltaSigmaPrj} (filled
+markers, solid) against the \texttt{scipy.quad} reference (open
+markers) at \((\lob,\zob)\!=\!(20,0.5)\). Top: absolute profiles
+for \texttt{total}, \texttt{cl} (default return), and \texttt{rnd}
+(truncation-dependent boundary term). Bottom: fractional residual
+\((\mathrm{prod}-\mathrm{quad})/\mathrm{quad}\), with
+\(\pm0.5\%\) guides (dotted). Agreement is sub-\(0.5\%\) for
+\(R\!\ge\!1\,\hMpc\); at \(R\!=\!0.3\) the \(\sim2\%\) residual
+tracks a real quadrature-method difference where
+\(\theta_{\rm excl}(z)\sim\theta_R\) (see text).}
+\label{fig:dsprj_quad}
 \end{figure}
 
 \section*{\textcolor{harvardcrimson}{Numerical pitfalls}}
@@ -738,8 +824,14 @@ gives the Python call.
 \midrule
 \(\Smis(R\mid M,z,\theta,\zob)\) & Azimuth-averaged miscentered NFW (offset-NFW lookup) &
   \eqref{eq:Smis} & \texttt{NFWMiscentered(cosmo).sigma\_grid(R,Rtheta,M,z)} \\
+\(\Delta\Smis\) & Miscentered NFW radial excess
+  \(\bar\Sigma_{\rm mis}(<\!R)-\Smis(R)\) (companion lookup table) & --- &
+  \texttt{NFWMiscentered.delta\_sigma\_grid} \\
 \(\avg{\Sprj(R\mid\lob,\zob)}\) & Two-halo projected surface density (main output) &
   \eqref{eq:Sprj} & \texttt{SigmaPrj(cosmo,sel\_bias,nfw)(R,lob,zob)} \\
+\(\avg{\Delta\Sigma^{\rm prj}(R\mid\lob,\zob)}\) & Two-halo lensing excess
+  (see \texttt{docs/delta\_sigma\_prj\_derivation.tex}) & --- &
+  \texttt{DeltaSigmaPrj(cosmo,sel\_bias,nfw)(R,lob,zob)} \\
 \bottomrule
 \end{tabular}
 \end{center}

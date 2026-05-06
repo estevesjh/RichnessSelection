@@ -9,6 +9,14 @@ in `validations/cache/`.
 
 Throughout: distances in cMpc/h, masses in M☉/h, angles in radians.
 
+> **Companion note.** For the lensing excess `⟨ΔΣ^prj⟩` — derivation,
+> linearity-in-`R` argument, and the adaptive `θ_max = 3·max(R)/χ(z_ob)`
+> recipe that replaces the legacy `R_max=30 cMpc/h` truncation — see
+> `docs/delta_sigma_prj_derivation.tex`. The shared pipeline (θ-grid,
+> z-grid, exclusion, b_sel evaluation) described below is reused
+> unchanged; only the NFW kernel is swapped
+> (`NFWMiscentered._spl` → `_dsig_spl`).
+
 
 ## 1. What is being computed
 

@@ -1,9 +1,10 @@
 """Miscentered NFW surface density via precomputed "single" lookup table.
 
 Tables (loaded once at construction):
-    table_1000_1e-03_5e+03_single_logx.txt      999 pts   ln(R/R_s)
-    table_1000_1e-03_5e+03_single_logxmis.txt   249 pts   ln(R_mis/R_s)
-    table_1000_1e-03_5e+03_log_sigma_single.txt 250 x 1000  ln f(x, x_mis)
+    table_1000_1e-03_5e+03_single_logx.txt           999 pts   ln(R/R_s)
+    table_1000_1e-03_5e+03_single_logxmis.txt        249 pts   ln(R_mis/R_s)
+    table_1000_1e-03_5e+03_log_sigma_single.txt      250 x 1000  ln f(x, x_mis)
+    table_1000_1e-03_5e+03_log_deltasigma_single.txt 250 x 1000  ln g(x, x_mis)
 
 The stored `f` is empirically (2023-table convention):
     f = (1/(4 pi^2 R_s rho_s)) * int d phi Sigma_NFW(R_h)
@@ -17,6 +18,13 @@ which is HALF the Costanzi 2026 paper eq. 14 definition:
 So the lookup's return, multiplied by 2, matches paper eq. 14.  The
 factor-of-2 is applied in `sigma_grid` below, so downstream callers
 (e.g. Sigma_prj) see paper-convention values.
+
+The `g` (deltasigma) table follows the SAME half-paper convention:
+cross-checked at R_mis -> 0 against the Wright & Brainerd 2000 centred
+NFW Delta_Sigma(R), the raw table value is exactly 1/2 of the paper
+definition, and `2 * (2 pi R_s rho_s) * exp(ln g)` reproduces the
+analytical centred answer to 4 decimals.  The same factor-of-2 is
+therefore applied in `delta_sigma_grid` below.
 
 Cross-check: at R_mis -> 0 the paper eq. 14 gives
     Sigma_mis = 2 pi * Sigma_NFW(R)   (phi-independent integrand)
@@ -49,12 +57,21 @@ class NFWMiscentered:
             table_dir, "table_1000_1e-03_5e+03_single_logxmis.txt"))
         log_sigma = np.loadtxt(os.path.join(
             table_dir, "table_1000_1e-03_5e+03_log_sigma_single.txt"))
+        log_dsigma = np.loadtxt(os.path.join(
+            table_dir, "table_1000_1e-03_5e+03_log_deltasigma_single.txt"))
+        if log_dsigma.shape != log_sigma.shape:
+            raise ValueError(
+                "log_deltasigma_single table shape "
+                f"{log_dsigma.shape} != log_sigma_single shape "
+                f"{log_sigma.shape}; axes must match")
 
         lnxmis = self._log_xmis[: log_sigma.shape[0]]
         lnx = self._log_x[: log_sigma.shape[1]]
         self._lnx_lo, self._lnx_hi = lnx[0], lnx[-1]
         self._lnxmis_lo, self._lnxmis_hi = lnxmis[0], lnxmis[-1]
         self._spl = RectBivariateSpline(lnxmis, lnx, log_sigma, kx=1, ky=1)
+        self._dsig_spl = RectBivariateSpline(
+            lnxmis, lnx, log_dsigma, kx=1, ky=1)
 
     def _rs_and_rhos(self, M, z):
         """R_s [cMpc/h], rho_s [Msun/h / (cMpc/h)^3]."""
@@ -78,3 +95,19 @@ class NFWMiscentered:
         lnF = self._spl(lnxmis, lnx)
         # Stored lookup = (1/2) * paper_eq14; correct with the factor of 2.
         return 2.0 * (2.0 * np.pi * rs * rho_s) * np.exp(lnF)
+
+    def delta_sigma_grid(self, R_arr, R_mis_arr, M, z):
+        """Delta_Sigma_mis = bar_Sigma_mis(<R) - Sigma_mis(R) over
+        (R_mis, R), in the same paper-eq.-14 convention as ``sigma_grid``
+        (phi-integrated, 2 pi factor absorbed; see module docstring).
+
+        Returns (N_Rmis, N_R) array of DeltaSigma_mis [Msun/h / (cMpc/h)^2].
+        """
+        rs, rho_s = self._rs_and_rhos(M, z)
+        lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
+        lnxmis = np.clip(np.log(R_mis_arr / rs),
+                         self._lnxmis_lo, self._lnxmis_hi)
+        lnG = self._dsig_spl(lnxmis, lnx)
+        # Stored lookup = (1/2) * paper convention; same factor of 2
+        # as sigma_grid (verified at R_mis -> 0 vs Wright & Brainerd 2000).
+        return 2.0 * (2.0 * np.pi * rs * rho_s) * np.exp(lnG)
