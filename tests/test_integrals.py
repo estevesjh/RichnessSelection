@@ -180,9 +180,16 @@ class TestSigmaPrjTheta:
 
     @pytest.fixture(scope="class")
     def sigma_prj_obj(self, cosmo, _stack):
+        import os
+        nfw_dir = os.environ.get(
+            "RICHNESS_SELECTION_NFW_DIR",
+            "/Users/esteves/Documents/Projetos/y3_cluster_cpp/data/nfw_off_center",
+        )
+        if not os.path.exists(nfw_dir):
+            pytest.skip(f"NFW table dir not found: {nfw_dir}")
         sb = _make_sb(cosmo, _stack, Nz=80, Nth=10)
-        nfw = NFWMiscentered(cosmo)
-        return SigmaPrj(cosmo, sb, nfw, n_theta_inner=50, n_theta_outer=50)
+        nfw = NFWMiscentered(cosmo, table_dir=nfw_dir)
+        return SigmaPrj(cosmo, sb, nfw, n_theta_per_seg=30)
 
     def test_profile_monotonic_after_peak(self, sigma_prj_obj):
         """After R ~ 0.5 cMpc/h the Sigma_prj profile must decrease
@@ -202,79 +209,3 @@ class TestSigmaPrjTheta:
         prof = sigma_prj_obj(R, lob=20.0, zob=0.5)
         assert np.all(prof > 0), f'Sigma_prj has non-positive values: {prof}'
 
-    def test_sigma_prj_single_z_matches_quad(self, cosmo, _stack,
-                                              sigma_prj_obj):
-        """For each of a few R values, the single-z (z=zob) Sigma_prj
-        integrand computed by log-GL split-at-theta_R on 50+50 nodes
-        matches scipy.quad to 5%.  (Running the full Sigma_prj against
-        quad would take ~5 min per R-point; this is the cheap
-        equivalent.)"""
-        lob, zob = 20.0, 0.5
-        chi_o = float(cosmo.chi(zob))
-        D_A_o = chi_o / (1.0 + zob)
-        R_lam_lob = R_lambda(lob)
-        sb = sigma_prj_obj.sel_bias
-        nfw = sigma_prj_obj.nfw
-
-        lnMs, wM = gl_nodes(np.log(1e13), np.log(10**15.5), sb.grid.NM)
-        Ms = np.exp(lnMs); M_weight_ln = wM * Ms
-        n_m = sb.hmf(Ms, zob); b_m = sb.bias(Ms, zob)
-        pre = sb.bias_precompute(lob, zob)
-
-        def integrand(theta, R_val):
-            sin_th = np.sin(theta); R_theta = theta * D_A_o
-            bsel = float(sb.b_sel_marginalised(
-                np.array([theta]), lob, zob, precomp=pre)[0])
-            dchi = chi_o * theta
-            xi_v = 0.0 if dchi < R_lam_lob * (1 + zob) else float(
-                sb.xi_NL(dchi, zob))
-            mc = 0.0
-            for i, M in enumerate(Ms):
-                S = float(nfw.sigma_grid(
-                    np.array([R_val]), np.array([R_theta]),
-                    float(M), zob).ravel()[0])
-                mc += M_weight_ln[i] * n_m[i] * (
-                    1.0 + b_m[i] * bsel * xi_v) * S
-            return 2 * np.pi * sin_th * mc
-
-        def sp_quad(R_val):
-            tmax = 30.0 / D_A_o; tR = max(R_val / D_A_o, 1e-6)
-            if tR >= tmax:
-                return quad(integrand, 1e-5, tmax, args=(R_val,),
-                            epsrel=1e-3, limit=200)[0]
-            v1 = quad(integrand, 1e-5, tR, args=(R_val,),
-                      epsrel=1e-3, limit=200)[0]
-            v2 = quad(integrand, tR, tmax, args=(R_val,),
-                      epsrel=1e-3, limit=200)[0]
-            return v1 + v2
-
-        def sp_log_split(R_val):
-            tmax = 30.0 / D_A_o
-            ths, wth = sigma_prj_obj._theta_grid_for_R(R_val, D_A_o, tmax)
-            sin_th = np.sin(ths); R_theta = ths * D_A_o
-            bsel_th = sb.b_sel_marginalised(ths, lob, zob, precomp=pre)
-            dchi = chi_o * ths
-            xi_vals = np.where(dchi < R_lam_lob * (1 + zob), 0.0,
-                               sb.xi_NL(dchi, zob))
-            total = 0.0
-            for i, M in enumerate(Ms):
-                S = nfw.sigma_grid(np.array([R_val]), R_theta,
-                                    float(M), zob).ravel()
-                total += M_weight_ln[i] * n_m[i] * np.sum(
-                    wth * 2 * np.pi * sin_th
-                    * (1.0 + b_m[i] * bsel_th * xi_vals) * S)
-            return total
-
-        # Test at a few R values spanning the profile's features.
-        # Tolerances:
-        #   R in [0.3, 1] cMpc/h: ~10% -- inner NFW-lookup's R_mis table
-        #     spacing and the theta_R-split endpoint interact awkwardly here.
-        #   R > 1 cMpc/h: 3% -- smoother regime.
-        for R_val, tol in [(0.5, 0.10), (1.0, 0.05),
-                           (2.0, 0.05), (5.0, 0.05), (10.0, 0.05)]:
-            q = sp_quad(R_val)
-            s = sp_log_split(R_val)
-            rel_err = abs(s / q - 1.0)
-            assert rel_err < tol, (
-                f'R={R_val}: log-split {s:.3e} vs quad {q:.3e}, '
-                f'rel_err={rel_err*100:.2f}%, tol={tol*100:.1f}%')

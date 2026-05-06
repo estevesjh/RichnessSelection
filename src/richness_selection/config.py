@@ -38,3 +38,8 @@ class GridConfig:
 DEFAULT_GRID = GridConfig()
 
 NFW_TABLE_DIR = "/global/common/software/des/jesteves/y3_cluster_cpp/data/nfw_off_center"
+
+# Upper bound on the theta integral, expressed in cMpc/h of projected radius.
+# theta_max = R_MAX_CMPCH / D_A(z_ob).  Matches the Sigma_NFW truncation at the
+# same scale in Matteo's SelectionBias notebook (twoD_prj_NFW R_max = 30).
+R_MAX_CMPCH = 30.0

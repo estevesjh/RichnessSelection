@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from richness_selection import (
@@ -5,6 +6,12 @@ from richness_selection import (
     SigmaPrj, DEFAULT_GRID,
 )
 from richness_selection.sigma_m import SigmaM
+
+
+NFW_TABLE_DIR = os.environ.get(
+    "RICHNESS_SELECTION_NFW_DIR",
+    "/Users/esteves/Documents/Projetos/y3_cluster_cpp/data/nfw_off_center",
+)
 
 
 @pytest.fixture(scope="session")
@@ -50,7 +57,10 @@ def sel_bias(cosmo, pk, hmf, bias, mor, xi_nl):
 
 @pytest.fixture(scope="session")
 def nfw(cosmo):
-    return NFWMiscentered(cosmo)
+    if not os.path.exists(NFW_TABLE_DIR):
+        pytest.skip(f"NFW table dir not found: {NFW_TABLE_DIR}. "
+                    "Set RICHNESS_SELECTION_NFW_DIR to override.")
+    return NFWMiscentered(cosmo, table_dir=NFW_TABLE_DIR)
 
 
 @pytest.fixture(scope="session")

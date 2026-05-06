@@ -9,6 +9,7 @@ from .xi_nl import XiNL
 from .sel_bias import SelBias
 from .sigma_prj import SigmaPrj
 from .config import DEFAULT_GRID
+from .des_y3 import Y3_LAM_BINS, Y3_Z_BINS, Y3_LAM_MEAN, Y3_Z_MEAN
 from . import selection_function
 
 __all__ = [
@@ -24,6 +25,10 @@ __all__ = [
     "SelBias",
     "SigmaPrj",
     "DEFAULT_GRID",
+    "Y3_LAM_BINS",
+    "Y3_Z_BINS",
+    "Y3_LAM_MEAN",
+    "Y3_Z_MEAN",
     "selection_function",
 ]
 
