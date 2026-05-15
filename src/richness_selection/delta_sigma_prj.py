@@ -55,8 +55,9 @@ class DeltaSigmaPrj(SigmaPrj):
     Subclasses ``SigmaPrj`` and overrides two hooks:
 
     - ``_kernel_closure`` substitutes ``NFWMiscentered._dsig_spl``
-      for ``_spl`` inside the per-theta (NM, NR) lookup.  Same
-      factor-of-2 convention (both tables are half-paper).
+      for ``_spl`` inside the per-theta (NM, NR) lookup.  Same C++
+      ``2 * r_s * rho_eff * 1e-12`` prefactor (both tables are in
+      the C++ kernel's natural units).
 
     - ``R_max_cMpch`` defaults to ``R_max_factor * max(R_grid)`` when
       ``None`` is passed; otherwise forwards to ``SigmaPrj``.  The
@@ -95,14 +96,14 @@ class DeltaSigmaPrj(SigmaPrj):
     # ---------------- kernel override ---------------------------------------
 
     def _kernel_closure(self, R, ctx):
-        """DeltaSigma_mis lookup (phi-integrated, paper convention)."""
-        rs_M = ctx["rs_M"]; rho_s = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
+        """DeltaSigma_mis lookup in the C++ convention [Msun/h / pc^2]."""
+        rs_M = ctx["rs_M"]; rho_eff = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
         _dsig_spl = self.nfw._dsig_spl
         _lnx_lo = self.nfw._lnx_lo; _lnx_hi = self.nfw._lnx_hi
         _lnxmis_lo = self.nfw._lnxmis_lo; _lnxmis_hi = self.nfw._lnxmis_hi
         ln_R = np.log(R)[None, :] - np.log(rs_M)[:, None]   # (NM, NR)
         ln_R = np.clip(ln_R, _lnx_lo, _lnx_hi)
-        prefac_M = (2.0 * (2.0 * np.pi) * rs_M * rho_s)     # (NM,)
+        prefac_M = 2.0 * rs_M * rho_eff * 1.0e-12           # (NM,)  Msun/h/pc^2
 
         def kernel(theta):
             R_theta = theta * D_A_o

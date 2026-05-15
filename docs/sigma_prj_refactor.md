@@ -54,7 +54,7 @@ through `SelBias`):
 | `b(M, z)` | `Bias` | Tinker 2010 |
 | `ξ_NL(r, z)` | `XiNL` | halofit P_NL → FFTlog Hankel |
 | `w_z(z, z^ob)` | `photoz.w_z` | parabolic, vanishes at ±σ_z |
-| `Σ_mis(R | M, z, R_mis)` | `NFWMiscentered` | paper-Eq. 14 convention |
+| `Σ_mis(R | M, z, R_mis)` | `NFWMiscentered` | `y3_cluster_cpp` convention: `c=4`, `r_200c`, `2·r_s·ρ_eff·exp(lnf)·1e-12`, `M⊙/h / pc²` |
 | `b_sel(θ; λ^ob, z^ob)` | `SelBias.b_sel_marginalised` | `_P_operator` integrated over λ^tr |
 | `b_eff(λ^ob, z^ob)` | `SelBias.b_eff` | halo-bias average at fixed λ^ob |
 
@@ -181,8 +181,8 @@ Fubini-wise, any order computes the same integral. Numerically:
 - `Σ_mis(R, R_mis = θ·D_A)` and `b_sel(θ)` depend only on `θ`, not on
   `z` or M. Putting θ outer lets `b_sel(θ)` be evaluated once per
   θ-node via `SelBias.b_sel_marginalised` (one vectorised call).
-- `ρ_s(M)` and `R_s(M)` from the concentration relation (fixed
-  `c = 5` in v0.1) do **not** depend on z. So `Σ_mis(M, R, R_mis)`
+- `ρ_eff(M)` and `R_s(M)` from the concentration relation (fixed
+  `c = 4` per the C++ recipe) do **not** depend on z. So `Σ_mis(M, R, R_mis)`
   is z-independent at fixed θ: build it once per θ and reuse it for
   all z in the inner loop.
 - After the z-integral of `outer_weight(z) · n(M, z) · …` and

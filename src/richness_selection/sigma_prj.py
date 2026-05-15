@@ -31,8 +31,9 @@ Key numerical choices
   convention of ``SelBias._P_operator``.  The current theta value is
   compared against ``theta_excl(z)`` and xi_NL is zeroed below it -
   no 3-D ball mask.
-- NFW convention: ``nfw.sigma_grid`` returns paper Eq. 14 values
-  (factor of 2 already applied inside the lookup).
+- NFW convention: ``nfw.sigma_grid`` returns the C++ kernel value
+  ``Sigma_mis = 2 * r_s * rho_eff * exp(ln f) * 1e-12`` in
+  ``Msun/h / pc^2``  (see ``nfw.py`` module docstring).
 """
 from __future__ import annotations
 import numpy as np
@@ -139,21 +140,18 @@ class SigmaPrj:
         # outer weight = wzs * dV * w_z(z)
         outer_weight = wzs * dV * wz_kern
 
-        # Precompute per-M NFW scale radii and rho_s (z-independent in the
-        # fixed-concentration convention) so Sigma_mis_per_theta(theta) is
-        # just a vectorised spline lookup + exp.
-        rho_m = self.cosmo.Om0 * 2.77533742639e11
-        r200m = (3.0 * Ms / (4.0 * np.pi * 200.0 * rho_m)) ** (1.0 / 3.0)
-        rs_M = r200m / self.nfw.c
-        fc = np.log(1.0 + self.nfw.c) - self.nfw.c / (1.0 + self.nfw.c)
-        rho_s = rho_m * (200.0 / 3.0) * self.nfw.c ** 3 / fc
+        # Per-M NFW scale radii + rho_eff from the NFW object (C++ recipe:
+        # r_200 via rho_crit, rho_eff = delta_c * rho_crit * rho_mult).
+        # z-independent at fixed c, so cached here and reused across the
+        # theta loop.
+        rs_M, rho_eff_M = self.nfw._rs_and_rhos(Ms, zob)
 
         return dict(
             zs=zs, chi_z=chi_z, outer_weight=outer_weight,
             Ms=Ms, M_weight=M_weight, n_mz=n_mz, bM_mz=bM_mz,
             theta_excl_z=theta_excl_z,
             chi_o=chi_o, D_A_o=D_A_o, R_excl=R_excl,
-            rs_M=rs_M, rho_s=rho_s,
+            rs_M=rs_M, rho_s=rho_eff_M,
         )
 
     # ---------------- theta grid ---------------------------------------------
@@ -258,18 +256,17 @@ class SigmaPrj:
         """Return a callable ``kernel(theta) -> (NM, NR) Sigma_mis``.
 
         Subclasses override this to swap the underlying lookup spline
-        (e.g. ``DeltaSigmaPrj`` substitutes ``_dsig_spl``).  The
-        factor-of-2 / rs*rho_s prefactor is unchanged: both the Sigma
-        and the Delta-Sigma tables share the same half-paper
-        convention (see ``nfw.py`` module docstring).
+        (e.g. ``DeltaSigmaPrj`` substitutes ``_dsig_spl``).  C++ kernel
+        prefactor ``2 * r_s * rho_eff * 1e-12`` (same for Sigma and
+        DeltaSigma — see ``nfw.py`` module docstring).
         """
-        rs_M = ctx["rs_M"]; rho_s = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
+        rs_M = ctx["rs_M"]; rho_eff = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
         _spl = self.nfw._spl
         _lnx_lo = self.nfw._lnx_lo; _lnx_hi = self.nfw._lnx_hi
         _lnxmis_lo = self.nfw._lnxmis_lo; _lnxmis_hi = self.nfw._lnxmis_hi
         ln_R = np.log(R)[None, :] - np.log(rs_M)[:, None]   # (NM, NR)
         ln_R = np.clip(ln_R, _lnx_lo, _lnx_hi)
-        prefac_M = (2.0 * (2.0 * np.pi) * rs_M * rho_s)     # (NM,)
+        prefac_M = 2.0 * rs_M * rho_eff * 1.0e-12           # (NM,)  Msun/h/pc^2
 
         def kernel(theta):
             R_theta = theta * D_A_o

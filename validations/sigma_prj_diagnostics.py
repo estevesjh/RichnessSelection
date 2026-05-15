@@ -22,9 +22,10 @@ from scipy.optimize import bisect
 
 sys.stdout.reconfigure(line_buffering=True)
 
-NFW_TABLE_DIR = "/Users/esteves/Documents/Projetos/y3_cluster_cpp/data/nfw_off_center"
-SRC = "/Users/esteves/Documents/github/RichnessSelection/src"
-sys.path.insert(0, SRC)
+NFW_TABLE_DIR = os.environ.get(
+    "RICHNESS_SELECTION_NFW_DIR",
+    "/pscratch/sd/j/jesteves/github/RichnessSelection/data/nfw_off_center",
+)
 
 from richness_selection import (
     Cosmology, PkGrid, HMF, Bias, MOR, NFWMiscentered, SelBias, SigmaPrj,

@@ -6,31 +6,38 @@ Tables (loaded once at construction):
     table_1000_1e-03_5e+03_log_sigma_single.txt      250 x 1000  ln f(x, x_mis)
     table_1000_1e-03_5e+03_log_deltasigma_single.txt 250 x 1000  ln g(x, x_mis)
 
-The stored `f` is empirically (2023-table convention):
-    f = (1/(4 pi^2 R_s rho_s)) * int d phi Sigma_NFW(R_h)
-    <=> f = (1/(2 pi)) * <Sigma_NFW>_phi / (R_s rho_s)
+C++ convention (authoritative: y3_cluster_cpp ``NFW_SIGMA_MIS`` and
+``NFW_DSIGMA_MIS``)
+----------------------------------------------------------------------
 
-When we reconstruct via  `Sigma_mis = (2 pi R_s rho_s) * exp(ln f)`
-we get  Sigma_mis = <Sigma_NFW>_phi / pi  (i.e. phi-integrated then /pi),
-which is HALF the Costanzi 2026 paper eq. 14 definition:
-    Sigma_mis^{paper} = int_0^2pi Sigma_NFW(R_h) d phi
+The stored tables ``f`` and ``g`` are the same ones used by
+``y3_cluster_cpp``.  The C++ reconstruction recipe (mirrored here) is::
 
-So the lookup's return, multiplied by 2, matches paper eq. 14.  The
-factor-of-2 is applied in `sigma_grid` below, so downstream callers
-(e.g. Sigma_prj) see paper-convention values.
+    r_200  = cbrt( 3 M / (800 pi rho_crit) )        [cMpc/h]
+    r_s    = r_200 / c,                c = 4                    (default)
+    delta_c = (200 c^3 / 3) / (ln(1+c) - c/(1+c))
+    rho_eff = delta_c * rho_crit * Omega_m                      (cMpc/h units)
 
-The `g` (deltasigma) table follows the SAME half-paper convention:
-cross-checked at R_mis -> 0 against the Wright & Brainerd 2000 centred
-NFW Delta_Sigma(R), the raw table value is exactly 1/2 of the paper
-definition, and `2 * (2 pi R_s rho_s) * exp(ln g)` reproduces the
-analytical centred answer to 4 decimals.  The same factor-of-2 is
-therefore applied in `delta_sigma_grid` below.
+    Sigma_mis      = 2 * r_s * rho_eff * exp(ln f) * 1e-12      [Msun/h / pc^2]
+    DeltaSigma_mis = 2 * r_s * rho_eff * exp(ln g) * 1e-12      [Msun/h / pc^2]
 
-Cross-check: at R_mis -> 0 the paper eq. 14 gives
-    Sigma_mis = 2 pi * Sigma_NFW(R)   (phi-independent integrand)
-whereas the centered Sigma_NFW itself is just `Sigma_NFW(R)`.  In
-Sigma_prj / eq. 13, `Sigma_mis` with paper eq. 14's definition is what
-gets integrated; the centered profile is never passed directly.
+The ``1e-12`` factor converts ``Msun/h / (cMpc/h)^2`` (the natural
+units of ``r_s * rho_eff``) into ``Msun/h / pc^2`` so downstream code
+carries the C++ lensing-observable units directly.
+
+Divergence from the previous (paper-Eq.-14) convention
+------------------------------------------------------
+
+- ``c`` default was 5; the C++ side uses 4.
+- ``r_200`` was ``r_200m`` via ``rho_m``; C++ uses ``r_200c`` via ``rho_crit``.
+- ``Sigma_mis`` had a ``2 * (2 pi r_s rho_s)`` prefactor (pair of factors
+  chosen to land on Costanzi 2026 Eq. 14 / Wright & Brainerd 2000 convention);
+  C++ uses ``2 * r_s * rho_eff * 1e-12`` — no ``2 pi``, natural C++ units.
+
+The two conventions are related by a mass-dependent rescaling (different
+``r_s`` *and* a per-call constant), so callers are *not* isomorphic up to
+an overall constant. Regression goldens changed when this module was
+switched over; see ``docs/sigma_prj_refactor.md`` Section 2.
 """
 from __future__ import annotations
 import os
@@ -41,16 +48,31 @@ from .cosmology import Cosmology
 from .config import NFW_TABLE_DIR
 
 
+# rho_crit,0 at H0 = 100 km/s/Mpc, in Msun/h / (cMpc/h)^3.
+RHO_CRIT_0 = 2.77533742639e11
+
+# (cMpc/h)^-2 -> pc^-2  conversion.  Natural (r_s * rho_eff) units are
+# Msun/h / (cMpc/h)^2; multiply by (Mpc/pc)^-2 = 1e-12 to get Msun/h/pc^2.
+CMPCH2_TO_PC2 = 1.0e-12
+
+
 class NFWMiscentered:
     """Miscentered NFW Sigma(R | M, z, R_mis) from the Y3 lookup table.
 
-    Concentration is Duffy 2008-style fixed c = 5 for v0.1; swap to a
-    c(M, z) model later if needed.
+    C++ convention (``y3_cluster_cpp::NFW_SIGMA_MIS``):
+    ``c = 4`` default, ``r_200`` via ``rho_crit``, output in
+    ``Msun/h / pc^2``.  See module docstring.
     """
 
-    def __init__(self, cosmo: Cosmology, table_dir=NFW_TABLE_DIR, c=5.0):
+    def __init__(self, cosmo: Cosmology, table_dir=NFW_TABLE_DIR,
+                 c: float = 4.0, rho_crit: float = RHO_CRIT_0,
+                 rho_mult: float | None = None):
         self.cosmo = cosmo
-        self.c = c
+        self.c = float(c)
+        self._rho_crit = float(rho_crit)
+        # Default rho_mult = Omega_m (matches C++ ``rho_mult = omega_m``).
+        self._rho_mult = (float(rho_mult) if rho_mult is not None
+                          else float(cosmo.Om0))
         self._log_x = np.loadtxt(os.path.join(
             table_dir, "table_1000_1e-03_5e+03_single_logx.txt"))
         self._log_xmis = np.loadtxt(os.path.join(
@@ -74,40 +96,44 @@ class NFWMiscentered:
             lnxmis, lnx, log_dsigma, kx=1, ky=1)
 
     def _rs_and_rhos(self, M, z):
-        """R_s [cMpc/h], rho_s [Msun/h / (cMpc/h)^3]."""
-        rho_m = self.cosmo.Om0 * 2.77533742639e11
-        r200m = (3.0 * M / (4.0 * np.pi * 200.0 * rho_m)) ** (1.0 / 3.0)
-        rs = r200m / self.c
-        fc = np.log(1.0 + self.c) - self.c / (1.0 + self.c)
-        rho_s = rho_m * (200.0 / 3.0) * self.c ** 3 / fc
-        return rs, rho_s
+        """``(r_s, rho_eff)`` in the C++ convention.
+
+        ``r_s`` [cMpc/h], ``rho_eff = delta_c * rho_crit * rho_mult``
+        [Msun/h / (cMpc/h)^3].  The ``_rho_s`` name used in older call
+        sites now refers to ``rho_eff`` (same object, C++-recipe value).
+        """
+        c = self.c
+        rhoc = self._rho_crit
+        r_200 = np.cbrt(3.0 * M / (800.0 * np.pi * rhoc))
+        rs = r_200 / c
+        fc = np.log(1.0 + c) - c / (1.0 + c)
+        delta_c = (200.0 * c ** 3 / 3.0) / fc
+        return rs, delta_c * rhoc * self._rho_mult
 
     def sigma_grid(self, R_arr, R_mis_arr, M, z):
-        """Sigma_mis over (R_mis, R) in the Costanzi 2026 paper eq. 14
-        convention:  Sigma_mis = int_0^{2 pi} Sigma_NFW(R_h) d phi.
+        """Sigma_mis(R, R_mis | M) in the C++ convention [Msun/h / pc^2].
 
-        Returns (N_Rmis, N_R) array of Sigma_mis [Msun/h / (cMpc/h)^2].
+        Returns a (N_Rmis, N_R) array.
         """
-        rs, rho_s = self._rs_and_rhos(M, z)
+        rs, rho_eff = self._rs_and_rhos(M, z)
         lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
         lnxmis = np.clip(np.log(R_mis_arr / rs),
                          self._lnxmis_lo, self._lnxmis_hi)
         lnF = self._spl(lnxmis, lnx)
-        # Stored lookup = (1/2) * paper_eq14; correct with the factor of 2.
-        return 2.0 * (2.0 * np.pi * rs * rho_s) * np.exp(lnF)
+        norm = 2.0 * rs * rho_eff
+        return norm * np.exp(lnF) * CMPCH2_TO_PC2
 
     def delta_sigma_grid(self, R_arr, R_mis_arr, M, z):
-        """Delta_Sigma_mis = bar_Sigma_mis(<R) - Sigma_mis(R) over
-        (R_mis, R), in the same paper-eq.-14 convention as ``sigma_grid``
-        (phi-integrated, 2 pi factor absorbed; see module docstring).
+        """DeltaSigma_mis(R, R_mis | M) in the C++ convention [Msun/h / pc^2].
 
-        Returns (N_Rmis, N_R) array of DeltaSigma_mis [Msun/h / (cMpc/h)^2].
+        Returns a (N_Rmis, N_R) array.  Same ``2 * r_s * rho_eff * 1e-12``
+        prefactor as ``sigma_grid`` — both tables are in the C++ kernel's
+        natural units.
         """
-        rs, rho_s = self._rs_and_rhos(M, z)
+        rs, rho_eff = self._rs_and_rhos(M, z)
         lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
         lnxmis = np.clip(np.log(R_mis_arr / rs),
                          self._lnxmis_lo, self._lnxmis_hi)
         lnG = self._dsig_spl(lnxmis, lnx)
-        # Stored lookup = (1/2) * paper convention; same factor of 2
-        # as sigma_grid (verified at R_mis -> 0 vs Wright & Brainerd 2000).
-        return 2.0 * (2.0 * np.pi * rs * rho_s) * np.exp(lnG)
+        norm = 2.0 * rs * rho_eff
+        return norm * np.exp(lnG) * CMPCH2_TO_PC2

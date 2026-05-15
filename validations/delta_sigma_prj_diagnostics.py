@@ -120,14 +120,11 @@ def _quad_one(args):
     # _theta_grid breakpoint set (sigma_prj.py:178-192).
     theta_lam = float(theta_lambda(lob, zob, cosmo))
 
-    # NFW per-M prefactor + scale radii (z-independent at fixed c).
-    rho_m = cosmo.Om0 * 2.77533742639e11
-    r200m = (3.0 * Ms / (4.0 * np.pi * 200.0 * rho_m)) ** (1.0 / 3.0)
-    rs = r200m / nfw.c
-    fc = np.log(1.0 + nfw.c) - nfw.c / (1.0 + nfw.c)
-    rho_s = rho_m * (200.0 / 3.0) * nfw.c ** 3 / fc
+    # NFW per-M prefactor + scale radii (C++ convention: z-independent
+    # at fixed c; see nfw.py module docstring).
+    rs, rho_eff = nfw._rs_and_rhos(Ms, zob)
     lnx_R = np.clip(np.log(R_val / rs), nfw._lnx_lo, nfw._lnx_hi)  # (NM,)
-    prefac_M = 2.0 * (2.0 * np.pi * rs * rho_s)                     # (NM,)
+    prefac_M = 2.0 * rs * rho_eff * 1.0e-12                         # (NM,)  Msun/h/pc^2
     _dsig_spl = nfw._dsig_spl
     _lnxmis_lo = nfw._lnxmis_lo
     _lnxmis_hi = nfw._lnxmis_hi
