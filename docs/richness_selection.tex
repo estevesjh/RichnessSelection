@@ -346,14 +346,56 @@ with \(P(\ltr\mid\lob,\zob)\propto P(\lob\mid\ltr,\zob)\,
 the true richness, gives the final input to
 eq.~\eqref{eq:Sprj}.
 
+Because eq.~\eqref{eq:b_sigmoid} is linear in the plateaus
+\((\bsmall,\blarge)\) and the sigmoid \(\sigma(\theta)\) carries no
+\(\ltr\) dependence, the \(\ltr\)-marginalisation commutes with the
+sigmoid assembly. Defining the \(\ltr\)-averaged plateaus
+\begin{equation}
+\bar{b}_{\rm small}(\lob,\zob)
+\;=\; \int\!d\ltr\;\bsmall(\lob,\ltr,\zob)\,P(\ltr\mid\lob,\zob),
+\qquad
+\bar{b}_{\rm large}(\lob,\zob)
+\;=\; \int\!d\ltr\;\blarge(\lob,\ltr,\zob)\,P(\ltr\mid\lob,\zob),
+\label{eq:b_bar_plateaus}
+\end{equation}
+eq.~\eqref{eq:b_marg_lt} reduces to
+\begin{equation}
+\boxed{\;
+\bsel(\lob,\zob,\theta)
+\;=\; \bar{b}_{\rm small}(\lob,\zob)\,[\,1-\sigma(\theta)\,]
+   + \bar{b}_{\rm large}(\lob,\zob)\,\sigma(\theta).
+\;}
+\label{eq:b_marg_sigmoid}
+\end{equation}
+Eq.~\eqref{eq:b_marg_sigmoid} is numerically identical to
+eq.~\eqref{eq:b_marg_lt} (it is an algebraic rearrangement, not an
+approximation), but shifts the \(\ltr\)-quadrature from \emph{inside}
+the \(\theta\)-loop to a one-shot pre-computation at fixed
+\((\lob,\zob)\). Downstream consumers that assemble \(\bsel(\theta)\)
+at many \(\theta\)-nodes --- notably
+\(\avg{\Sprj}\) and \(\avg{\DSprj}\) --- therefore only pay the cost
+of the analytic sigmoid per call.
+
+The \(\bsmall\)-denominator guard in eq.~\eqref{eq:b_small}
+(\(|I_2-I_1|\to 0\) \(\Rightarrow\) \(\bsmall\!\leftarrow\!\blarge\))
+is applied per-\(\ltr\) before the average, so the definition of
+\(\bar{b}_{\rm small}\) in eq.~\eqref{eq:b_bar_plateaus} is
+well-defined even when the denominator is small for a subset of the
+\(\ltr\) grid.
+
 In \texttt{SelBias} (\S\ref{part:api}), steps computed once per
 \((\lob,\zob)\) (\(\bhalo\), \(\Pop[1]\), \(I_1\), \(I_2\),
 \(\dprj_{\rm RND}\)) are cached inside
 \texttt{bias\_precompute}; the per-\(\ltr\) closures of
 eqs.~\eqref{eq:b_infty}--\eqref{eq:b_small} live in
-\texttt{bias\_from\_precomp}; and the sigmoid assembly +
-\(\ltr\)-marginalisation are \texttt{b\_lob\_theta} and
-\texttt{b\_sel\_marginalised} respectively.
+\texttt{bias\_from\_precomp}; the sigmoid assembly at fixed
+\(\ltr\) is \texttt{b\_lob\_theta}; and the
+\(\ltr\)-marginalised plateaus
+\((\bar{b}_{\rm small},\bar{b}_{\rm large})\) of
+eq.~\eqref{eq:b_bar_plateaus} are cached by
+\texttt{\_marginalised\_plateaus}. The public entry point
+\texttt{b\_sel\_marginalised(theta, lob, zob)} evaluates
+eq.~\eqref{eq:b_marg_sigmoid} directly from those cached plateaus.
 
 \subsection{Two-halo projected profile}
 \label{sec:Sprj}
@@ -817,8 +859,10 @@ gives the Python call.
   \eqref{eq:b_small} & \texttt{bias\_from\_precomp(pre,ltr)['b\_zero']} \\
 \(\bsel(\lob,\ltr,\zob,\theta)\) & Scale-dependent bias via sigmoid ansatz &
   \eqref{eq:b_sigmoid} & \texttt{SelBias.b\_lob\_theta(th,ltr,zob,lob,precomp=pre)} \\
+\(\bar{b}_{\rm small},\bar{b}_{\rm large}\) & \(\ltr\)-averaged plateaus (cached per \((\lob,\zob)\)) &
+  \eqref{eq:b_bar_plateaus} & \texttt{SelBias.\_marginalised\_plateaus(lob,zob,pre,...)} \\
 \(\bsel(\lob,\zob,\theta)\) & \(\ltr\)-marginalised bias; input to \(\avg{\Sprj}\) &
-  \eqref{eq:b_marg_lt} & \texttt{SelBias.b\_sel\_marginalised(th,lob,zob,precomp=pre)} \\
+  \eqref{eq:b_marg_sigmoid} & \texttt{SelBias.b\_sel\_marginalised(th,lob,zob,precomp=pre)} \\
 \midrule
 \multicolumn{4}{@{}l}{\emph{Two-halo profile}} \\
 \midrule

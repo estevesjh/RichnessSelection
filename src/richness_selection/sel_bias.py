@@ -382,29 +382,29 @@ class SelBias:
         """Alias for b_eff(ltr, zcl) (keeps old test names working)."""
         return self.b_eff(ltr, zcl)
 
-    def b_sel_marginalised(self, theta, lob, zob, ltr_grid_size=None,
-                           precomp=None, use_plob_ltr: bool = True):
-        """Marginalised bias per Eq. (b_marg_lt) of the TeX.
+    def _marginalised_plateaus(self, lob, zob, precomp,
+                               ltr_grid_size, use_plob_ltr):
+        """Return ``(b_zero_bar, b_infty_bar)``: the plateau averages
+        of ``bias_from_precomp`` under ``P(ltr | lob, zob)``.
 
-        P(ltr | lob, zob) propto P(lob | ltr, zob) * prior(ltr, zob),
-        with prior(ltr, zob) = int dM n(M,z) P(ltr | M, z).
+        Cached per ``(lob, zob, ltr_grid_size, use_plob_ltr)`` because
+        the underlying plateau integrals are ltr-only (no theta
+        dependence), so ``b_sel_marginalised(theta, ...)`` only has to
+        evaluate the analytic sigmoid once per call rather than an
+        ltr-loop per theta-node.  The per-ltr ``b_zero`` / ``b_infty``
+        closures are the same ones returned by ``bias_from_precomp``.
 
-        P(lob | ltr, z) is the full EMG kernel of
-        Eq. (costanzi_kernel):  (1 - f_prj) Gaussian + f_prj * EMG.
-        This is smooth in ltr -- no delta function -- so the
-        marginalisation is a single GL quadrature.
-
-        With ``use_plob_ltr=False`` the P(lob|ltr) factor is dropped
-        and only prior(ltr) weights enter (diagnostic only: wrong
-        physics).
+        Derivation: ``b_lob_theta(theta | ltr)`` = b_zero(ltr)(1-sigma)
+        + b_infty(ltr) sigma, and sigma(theta) is ltr-independent, so
+        ``int dltr P(ltr) b_lob_theta(theta | ltr) = b_zero_bar
+        (1 - sigma(theta)) + b_infty_bar sigma(theta)``.  Formalised
+        in ``docs/richness_selection.tex`` eq.~\\eqref{eq:b_marg_sigmoid}.
         """
-        if ltr_grid_size is None:
-            ltr_grid_size = self.grid.ltr_grid_size
-        pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
+        cache_key = ("marg", float(lob), float(zob),
+                     int(ltr_grid_size), bool(use_plob_ltr))
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
-        # EMG kernel has a Gaussian component of width sigma ~ a few, so we
-        # need ltr support that covers [lob - 6 sigma, lob + 6 sigma] plus
-        # the exponential tail (length ~ 1/tau).  Conservative: ltr in [1, 3*lob].
         t_nodes, t_wts = gl_nodes(1.0, 3.0 * float(lob), ltr_grid_size * 2)
 
         # prior(ltr, z) = int dM n(M,z) P(ltr | M, z)
@@ -423,14 +423,60 @@ class SelBias:
         else:
             p_ltr = prior_ltr
 
-        theta_arr = np.asarray(theta, dtype=float)
-        num = np.zeros_like(theta_arr)
+        num_zero = 0.0
+        num_infty = 0.0
         den = 0.0
         for ltr, w, pw in zip(t_nodes, t_wts, p_ltr):
             weight = float(w * pw)
             if weight == 0.0:
                 continue
-            num = num + weight * self.b_lob_theta(
-                theta_arr, ltr, zob, lob, precomp=pre)
+            pr = self.bias_from_precomp(precomp, float(ltr))
+            num_zero += weight * pr["b_zero"]
+            num_infty += weight * pr["b_infty"]
             den += weight
-        return num / den if den > 0 else np.full_like(theta_arr, np.nan)
+
+        if den <= 0:
+            val = (float("nan"), float("nan"))
+        else:
+            val = (num_zero / den, num_infty / den)
+        self._cache[cache_key] = val
+        return val
+
+    def b_sel_marginalised(self, theta, lob, zob, ltr_grid_size=None,
+                           precomp=None, use_plob_ltr: bool = True):
+        """Marginalised bias per Eq. (b_marg_lt) of the TeX.
+
+        P(ltr | lob, zob) propto P(lob | ltr, zob) * prior(ltr, zob),
+        with prior(ltr, zob) = int dM n(M,z) P(ltr | M, z).
+
+        P(lob | ltr, z) is the full EMG kernel of
+        Eq. (costanzi_kernel):  (1 - f_prj) Gaussian + f_prj * EMG.
+        This is smooth in ltr -- no delta function -- so the
+        marginalisation is a single GL quadrature.
+
+        Because ``b_lob_theta`` is linear in ``(b_zero, b_infty)`` and
+        the sigmoid ``sigma(theta)`` is ltr-independent, the
+        ltr-marginalisation commutes with the sigmoid assembly: we
+        precompute the plateau averages ``b_zero_bar``, ``b_infty_bar``
+        once per ``(lob, zob)`` (see ``_marginalised_plateaus``) and
+        then evaluate the analytic sigmoid at ``theta`` in a single
+        vectorised call.  This is numerically identical (to machine
+        precision) to looping over the ltr grid for every theta-node
+        and is substantially cheaper when ``theta`` is an array.
+
+        With ``use_plob_ltr=False`` the P(lob|ltr) factor is dropped
+        and only prior(ltr) weights enter (diagnostic only: wrong
+        physics).
+        """
+        if ltr_grid_size is None:
+            ltr_grid_size = self.grid.ltr_grid_size
+        pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
+
+        b_zero_bar, b_infty_bar = self._marginalised_plateaus(
+            lob, zob, pre, ltr_grid_size, use_plob_ltr)
+
+        theta_arr = np.asarray(theta, dtype=float)
+        if not np.isfinite(b_zero_bar):
+            return np.full_like(theta_arr, np.nan)
+        s = self._sigmoid_theta(theta_arr, lob, zob)
+        return b_zero_bar + (b_infty_bar - b_zero_bar) * s

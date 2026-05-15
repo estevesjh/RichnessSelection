@@ -175,6 +175,55 @@ class TestLambdaAxisConverged:
                 f'n_ltr=100 {p100[key]:.6e}, diff={diff*100:.4f}%')
 
 
+class TestBsellMarginalisedSigmoid:
+    """Marginalisation commutes with the sigmoid ansatz.
+
+    Because b_lob_theta is linear in (b_zero, b_infty) and sigma(theta)
+    is ltr-independent, the ltr-marginalisation can be carried through
+    to the plateaus.  The production code exploits this; this test
+    pins the equivalence against a straight ltr-loop to machine
+    precision.  See docs/richness_selection.tex eq. (b_marg_sigmoid).
+    """
+
+    def test_matches_explicit_ltr_loop(self, cosmo, _stack):
+        from richness_selection.plob_ltr import P_lob_given_ltr
+        from richness_selection.gl import gl_nodes
+
+        sb = _make_sb(cosmo, _stack, Nz=80, Nth=10)
+        lob, zob = 20.0, 0.5
+        pre = sb.bias_precompute(lob, zob)
+
+        # Replicate the ltr-grid and weights used inside
+        # _marginalised_plateaus so this is an apples-to-apples check.
+        ltr_grid_size = sb.grid.ltr_grid_size
+        t_nodes, t_wts = gl_nodes(1.0, 3.0 * lob, ltr_grid_size * 2)
+        log10_Mmin = np.log10(sb.min_mass4integral)
+        m_grid = 10.0 ** np.linspace(log10_Mmin, sb.ln_M_max_log10, 50)
+        hmf_m = sb.hmf(m_grid, zob)
+        p_ltr_M = sb.mor.pdf(t_nodes[:, None], m_grid[None, :], zob)
+        prior_ltr = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
+                             np.log(m_grid), axis=1)
+        p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(ltr), zob))
+                              for ltr in t_nodes])
+        p_ltr = p_lob_ltr * prior_ltr
+
+        # Straight loop: sum_ltr w(ltr) b_lob_theta(theta | ltr) / sum w
+        theta = np.logspace(-5, -1, 11)
+        num = np.zeros_like(theta)
+        den = 0.0
+        for ltr, w, pw in zip(t_nodes, t_wts, p_ltr):
+            wt = float(w * pw)
+            if wt == 0.0:
+                continue
+            num += wt * sb.b_lob_theta(theta, float(ltr), zob, lob,
+                                        precomp=pre)
+            den += wt
+        ref = num / den
+
+        marg = sb.b_sel_marginalised(theta, lob, zob, precomp=pre)
+        np.testing.assert_allclose(marg, ref, rtol=1e-12, atol=0)
+
+
 class TestSigmaPrjTheta:
     """Tests 3 and 4: Sigma_prj split-at-theta_R + monotonicity."""
 
