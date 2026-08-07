@@ -8,8 +8,19 @@ import numpy as np
 import pytest
 
 from richness_selection import FrozenSelBias, FrozenOperators
+from richness_selection.des_y3 import iter_bins
 from richness_selection.geometry import R_lambda
 from richness_selection.gl import gl_nodes
+
+Y1_BINS = [pytest.param(lam_bar, z_bar, id=f"lam{i}z{j}")
+           for (i, j), _, (lam_bar, z_bar) in iter_bins()]
+
+
+@pytest.fixture(scope="session")
+def dsp_pair(cosmo, sel_bias, nfw):
+    from richness_selection import DeltaSigmaPrj, FrozenDeltaSigmaPrj
+    return (DeltaSigmaPrj(cosmo, sel_bias, nfw),
+            FrozenDeltaSigmaPrj(cosmo, sel_bias, nfw))
 
 LOB, ZOB = 20.0, 0.5
 
@@ -115,15 +126,16 @@ class TestOperatorsRegression:
 class TestFrozenDeltaSigmaPrj:
     """Sec. 'Extension' of the frozen note: FrozenDeltaSigmaPrj vs
     production DeltaSigmaPrj (same theta grid, same NFW lookup, same
-    b_rm; residual = the (z,M) factorisation only)."""
+    b_rm; residual = the (z,M) factorisation only), across the 12
+    DES-Y1-like (richness x redshift) joint bins of
+    ``richness_selection.des_y3``."""
 
-    def test_vs_production(self, cosmo, sel_bias, nfw):
-        from richness_selection import DeltaSigmaPrj, FrozenDeltaSigmaPrj
+    @pytest.mark.parametrize("lob,zob", Y1_BINS)
+    def test_vs_production_12bins(self, dsp_pair, lob, zob):
+        dsp, fdsp = dsp_pair
         R = np.array([0.3, 1.0, 3.0, 10.0])
-        dsp = DeltaSigmaPrj(cosmo, sel_bias, nfw)
-        fdsp = FrozenDeltaSigmaPrj(cosmo, sel_bias, nfw)
-        d_p = dsp(R, LOB, ZOB, return_decomposition=True)
-        d_f = fdsp(R, LOB, ZOB, return_decomposition=True)
+        d_p = dsp(R, lob, zob, return_decomposition=True)
+        d_f = fdsp(R, lob, zob, return_decomposition=True)
         # rnd channel is exact (tilde-n hoist commutes past z-free kernel)
         np.testing.assert_allclose(d_f["rnd"], d_p["rnd"], rtol=1e-10)
         # cl channel carries only the drift-shape residual (eq. nb_drift)
