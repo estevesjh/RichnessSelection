@@ -110,3 +110,21 @@ class TestOperatorsRegression:
             sel_bias.b_rm(theta, LOB, ZOB),
             sel_bias.b_sel_marginalised(theta, LOB, ZOB), rtol=1e-12)
         assert np.isfinite(p.b_rm_ss) and np.isfinite(p.b_rm_ls)
+
+
+class TestFrozenDeltaSigmaPrj:
+    """Sec. 'Extension' of the frozen note: FrozenDeltaSigmaPrj vs
+    production DeltaSigmaPrj (same theta grid, same NFW lookup, same
+    b_rm; residual = the (z,M) factorisation only)."""
+
+    def test_vs_production(self, cosmo, sel_bias, nfw):
+        from richness_selection import DeltaSigmaPrj, FrozenDeltaSigmaPrj
+        R = np.array([0.3, 1.0, 3.0, 10.0])
+        dsp = DeltaSigmaPrj(cosmo, sel_bias, nfw)
+        fdsp = FrozenDeltaSigmaPrj(cosmo, sel_bias, nfw)
+        d_p = dsp(R, LOB, ZOB, return_decomposition=True)
+        d_f = fdsp(R, LOB, ZOB, return_decomposition=True)
+        # rnd channel is exact (tilde-n hoist commutes past z-free kernel)
+        np.testing.assert_allclose(d_f["rnd"], d_p["rnd"], rtol=1e-10)
+        # cl channel carries only the drift-shape residual (eq. nb_drift)
+        np.testing.assert_allclose(d_f["cl"], d_p["cl"], rtol=5e-4)

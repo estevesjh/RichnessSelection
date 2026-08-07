@@ -244,13 +244,16 @@ eq.~\eqref{eq:xi_rmh} --- reads
 \ximm\big(|\bm{r}_{\rm rm}-\bm{r}_{\rm h}|\big)\,\bigr]
 \notag\\
 &\times\;
-\DSmis\bigl(R\mid M,z,\Rmis=\theta\,\chi(\zob)\bigr),
+\DSmis\bigl(R\mid M,\Rmis=\theta\,D_A(\zob)\bigr),
 \label{eq:DSprj}
 \end{align}
 where $\DSmis$ is the excess surface density of a halo of mass
-$M$ miscentred by the transverse offset $\Rmis$ corresponding to
-the angular separation $\theta$, and the integral is understood
-to be normalised by the same $(z,M)$ halo measure. Every
+$M$ miscentred by the physical transverse offset
+$\Rmis = \theta\,D_A(\zob) = \theta\chi_o/(1+\zob)$, pinned at
+the target plane for every halo along the line of sight. No
+normalisation is needed: the observable is additive over
+neighbour halos, so the conditional expectation around one
+target is already a mean per cluster. Every
 projected structure that lenses the source galaxies behind the
 target is weighted by exactly the $\brm(\theta)$ defined above:
 an error in the selection-bias plateaus is an error in the
@@ -973,6 +976,224 @@ $(M,\lambda)$ contraction, the line-of-sight tables, the drift
 splines, the assembled operators --- are memoised per
 $(\lob,\zob)$). Benchmark:
 \texttt{validations/benchmark\_frozen.py}.
+
+\section{Extension: frozen physics for \texorpdfstring{$\avg{\DSprj}$}{DeltaSigma-prj}}
+\label{sec:frozen_dsprj}
+
+The lensing observable eq.~\eqref{eq:DSprj} carries the same
+two-tracer weight $[1 + b(M,z)\,\brm(\theta)\,\ximm(r)]$ as the
+contamination operators, so the same freeze applies. Four
+conventions of the implementation
+(\texttt{sigma\_prj.py} / \texttt{delta\_sigma\_prj.py}) pin the
+derivation:
+\begin{itemize}
+\item \textbf{The offset is pinned at the target plane.}
+      $\Rmis(\theta) = \theta\,D_A(\zob) = \theta\chi_o/(1+\zob)$
+      for every halo along the line of sight --- the kernel
+      argument never dilates with the halo redshift. Since
+      $\theta\chi_o = s_o(\theta)\cdot\theta/[2\sin(\theta/2)]$
+      with $s_o(\theta)\equiv2\chi_o\sin(\theta/2)$ the
+      transverse variable of eq.~\eqref{eq:sky_vars} evaluated at
+      the target, the kernels may equivalently be axed on
+      $(R,s_o)$ with $\Rmis = s_o/(1+\zob)$, up to the arc--chord
+      factor $1+\theta^2/24 \le 1+5\times10^{-5}$ at
+      $\theta_{\max}$.
+\item \textbf{The kernel is redshift-free.} The NFW lookup uses a
+      fixed concentration and today's densities
+      ($r_s(M)$, $\rho_{\rm eff}(M)$ carry no $z$), so
+      $\DSmis(R\mid M,\Rmis(\theta))$ depends on $z$ through
+      \emph{nothing}: the mass contraction is exactly a
+      $(R,\theta)$ object.
+\item \textbf{The correlation argument is the exact chord.} The
+      code evaluates $\ximm$ at
+      $r = |\bm r_{\rm rm}-\bm r_{\rm h}|
+      = \sqrt{\chi^2+\chi_o^2-2\chi\chi_o\cos\theta}$, which by
+      the chord law is exactly
+      $r^2 = \pi^2 + s^2$ with
+      $s^2 = s_o^2(\theta)\,(1+\pi/\chi_o)$ and
+      $\pi = \chi(z)-\chi_o$. It reduces to $|\pi|$ only at
+      $\theta=0$; at the largest angles the lensing integral
+      reaches ($s$ up to $\sim3\max R$) the transverse part
+      dominates. Below we write
+      $\ximm(\pi,\theta)\equiv\ximm(r)$ directly in the
+      integration variables. The growth epoch is frozen at
+      $\zob$ --- a production convention, not a new
+      approximation.
+\item \textbf{Exclusion sits on the clustered channel only.} The
+      per-$z$ mask $\theta > \theta_{\rm excl}(z)$ applied to
+      $\ximm$ is \emph{set-identical} to the exact-ball condition
+      $r>\Rex$ (same chord law:
+      $\theta>\theta_{\rm excl}(z) \Leftrightarrow
+      \chi^2+\chi_o^2-2\chi\chi_o\cos\theta > \Rex^2$). The rnd
+      channel carries \emph{no} exclusion here --- opposite to
+      the contamination operators, where the fiducial carves the
+      random channel too (\S\ref{sec:operators}). And no
+      normalisation denominator appears anywhere: the observable
+      is additive over neighbour halos (eq.~\ref{eq:DSprj}).
+\end{itemize}
+
+\paragraph{Reduced form.} Define the mass-contracted lensing
+kernels (exact, $z$-free):
+\begin{equation}
+K_n(R,\theta) = \int\!dM\; n(M,\zob)\;
+\DSmis\big(R\mid M,\Rmis(\theta)\big),
+\qquad
+K_b(R,\theta) = \int\!dM\; n(M,\zob)\,b(M,\zob)\;
+\DSmis\big(R\mid M,\Rmis(\theta)\big).
+\label{eq:K_lens}
+\end{equation}
+The rnd channel needs \emph{no freeze at all}: because the kernel
+is $z$-free, the $z$-integral commutes past it exactly,
+\begin{equation}
+\DSprj_{\rm rnd}(R)
+= 2\pi\!\int_0^{\theta_{\max}}\! d\theta\sin\theta\;
+\widetilde K_n(R,\theta),
+\qquad
+\widetilde K_n(R,\theta) = \int\!dM\;\tilde n(M)\,
+\DSmis\big(R\mid M,\Rmis(\theta)\big),
+\label{eq:rnd_exact}
+\end{equation}
+\begin{equation}
+\tilde n(M) \equiv
+\int_{z_{\rm lo}}^{z_{\rm hi}}\! dz\;
+\frac{dV}{dz\,d\Omega}\;
+w(z,\zob)\; n(M, z)
+\label{eq:ntilde}
+\end{equation}
+--- one 1-D contraction per $(\lob,\zob)$, computed once over
+the photo-$z$ window $[z_{\rm lo}, z_{\rm hi}]$ (the production
+code re-evaluates this $\theta$-independent object at every
+$\theta$-node, so the reduction hoists it for free).
+
+For the clustered channel, freeze the shape and keep the
+amplitude --- the lensing analogue of eq.~\eqref{eq:amp_drift},
+\begin{equation}
+n(M,z)\,b(M,z) \;=\; a_b(z)\;
+n(M,\zob)\,b(M,\zob)\,\big[1+\varepsilon_b(M,z)\big],
+\qquad
+a_b(z) =
+\frac{\displaystyle\int dM\; n(M,z)\,b(M,z)\; r_s(M)}
+     {\displaystyle\int dM\; n(M,\zob)\,b(M,\zob)\; r_s(M)}.
+\label{eq:nb_drift}
+\end{equation}
+The anchor weight is $r_s(M)\propto M^{1/3}$ --- the $R_{200}$
+scale --- because that is exactly how the kernel weights mass:
+$\DSmis \propto r_s\,\rho_{\rm eff}$ at fixed $R/r_s$, with
+$\rho_{\rm eff}$ mass-independent, so $a_b$ tracks the drift of
+the kernel-weighted bias density. By construction
+$\varepsilon_b(M,\zob)=0$ and
+$\int dM\,n\,b\,r_s\,\varepsilon_b = 0$ at every $z$ --- unlike
+eq.~\eqref{eq:amp_drift} there is no exact $f_A(0)=1$ anchor
+here, hence the explicit weight. Dropping $\varepsilon_b$, the
+$(z,M)$ block at fixed $\theta$ factorises into $K_b$ times the
+line-of-sight factor
+\begin{equation}
+\boxed{\;
+\Psi(\theta) =
+\int_{z_{\rm lo}}^{z_{\rm hi}}\! dz\;
+\frac{dV}{dz\,d\Omega}\;
+w(z,\zob)\; a_b(z)\;
+\ximm(\pi,\theta)\;
+\Theta\big(r > \Rex\big),
+\;}
+\qquad
+r^2 = \pi^2 + s_o^2(\theta)\Big(1+\tfrac{\pi}{\chi_o}\Big),
+\label{eq:Psi_lens}
+\end{equation}
+where everything except $a_b$ is exact: the measure, the window,
+the chord separation (the $s$--$\pi$ coupling inside $r$ is kept
+--- freezing $s\to s_o$ would cost up to $10^{-2}$ on $\ximm$ at
+large $\theta$ and saves nothing, since $\Psi$ is 1-D per
+$\theta$ regardless), and the exclusion ball. No $\pis$ zone
+split and no Limber expansion appear anywhere: the payload is
+purely transverse, so the line-of-sight integral is already 1-D,
+and inside $|\pi|\lesssim\pis$ the drift ansatz degenerates into
+the parity-protected hard freeze of \S\ref{sec:freeze}
+($a_b\to1$). $\Psi$ is smooth except for one derivative kink
+where the ball detaches, at
+$\theta = \arcsin(\Rex/\chi_o) \simeq \theta_{\rm excl,o}$ ---
+already a breakpoint of the production $\theta$-grid.
+
+\paragraph{Assembly.}
+\begin{equation}
+\boxed{\;
+\avg{\DSprj(R\mid\lob,\zob)}_{\rm tot}
+= 2\pi\!\int_0^{\theta_{\max}}\! d\theta\,\sin\theta\;
+\Big[\, \widetilde K_n(R,\theta)
+\;+\; \brm(\theta)\,\Psi(\theta)\,K_b(R,\theta) \,\Big],
+\;}
+\label{eq:DSprj_frozen}
+\end{equation}
+no denominator, with $\brm(\theta)$ the marginalised profile of
+eq.~\eqref{eq:brm} multiplying the clustered term only --- the
+first / second term are the production rnd / cl+LSS pieces, and
+the pipeline's default return is the second. The $\theta$-grid
+keeps the production breakpoint rule
+($\{\theta_{\rm excl,o},\,\thob,\,2\thob,\,
+\theta_R(R_i)\,\forall i,\,\theta_{\max}\}$, with
+$\theta_{\max}=3\max(R)(1+\zob)/\chi_o$ adaptive for $\DSprj$):
+$K_b(R,\theta)$ retains the load-bearing $\Rmis\simeq R$ kernel
+peak at each $\theta_R$, $\Psi$ kinks at $\theta_{\rm excl,o}$,
+and $\brm$ inflects at $\thob/2$. (In this convention
+$\theta_{\rm excl,o}=\thob$ identically, so the set has one
+fewer distinct entry than its notation suggests.)
+
+\paragraph{What this buys.} In the production code the $(z,M)$
+inner block at each $\theta$-node is a genuine 2-D quadrature,
+because $n(M,z)\,b(M,z)$ couples the axes. The reduction
+separates it: per $\theta$-node, one scalar $\Psi(\theta)$ (1-D
+in $\pi$, sharing the line-of-sight tables and drift splines
+already cached by \texttt{FrozenSelBias}) and batched
+$(R,\theta)$ table contractions $\widetilde K_n$, $K_b$ computed
+once --- the inner cost per node drops from $N_z\times N_M$ to
+$N_z + N_M$, and the rnd channel is exact rather than
+re-quadratured per $\theta$.
+
+\paragraph{Error budget.}
+\begin{center}
+\small
+\begin{tabular}{l l l}
+\toprule
+source & order & size \\
+\midrule
+kernel $z$-dependence ($\Rmis$ pinned; $r_s,\rho_{\rm eff}$
+$z$-free) & exact & $0$ \\
+exclusion (per-$z$ slab $\equiv$ ball, cl only) & exact (set
+identity) & $0$ \\
+rnd channel via $\tilde n(M)$ & exact & $0$ \\
+chord $r(\pi,\theta)$ kept exact & --- & $0$ \\
+$nb$ freeze, $|\pi|\lesssim\pis$ & parity-protected,
+$(\partial_z\ln nb\,\Delta z)^2$ & $\sim10^{-4}$ \\
+drift-shape residual $\varepsilon_b$, full window &
+${\rm Cov}_M[\varepsilon_b,\DSmis]$; second order & few
+$\times10^{-4}$--$10^{-3}$ \\
+arc--chord (only if re-axed on $s_o$) & $\theta^2/24$ &
+$\le5\times10^{-5}$ \\
+quadrature ($\theta$ breakpoints, $\Psi$'s $\pi$-grid) &
+inherits production tolerances & unchanged \\
+\bottomrule
+\end{tabular}
+\end{center}
+\paragraph{Implementation and measured performance.}
+\texttt{FrozenDeltaSigmaPrj}
+(\texttt{src/richness\_selection/frozen\_delta\_sigma\_prj.py})
+subclasses the production \texttt{DeltaSigmaPrj}, inheriting the
+$\theta$-grid, the $(z,M)$ context, and the marginalised
+$\brm(\theta)$ --- only the inner assembly changes, so measured
+residuals are the reduction alone. Two further wins come for
+free once the $\theta$-loop carries no $(z,M)$ work: $\Psi$ is
+evaluated on the whole $\theta$-grid in one vectorised pass, and
+because $\ln\Rmis(\theta)$ is monotonic in $\theta$ at fixed
+$M$, the NFW lookup collapses to \emph{one} tensor-grid spline
+call per mass node --- $N_M$ calls total, versus
+$N_M\times N_\theta$ in production. Measured at
+$(\lob,\zob)=(20,0.5)$, $R\in[0.1,30]$ (24 points): the rnd
+channel is machine-identical (exact hoist), the cl channel
+agrees to $7.5\times10^{-5}$ (the drift-shape residual, inside
+its a priori budget above; stable at $7$--$8\times10^{-5}$
+across $\dprj\in\{0,6,15\}$), and the total to
+$1.1\times10^{-5}$; wall-clock $154\,$ms $\to$ $38\,$ms per
+call, a $4.1\times$ speed-up.
 
 % ==================================================================
 % EVERYTHING BELOW: previous draft, commented out during the

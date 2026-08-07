@@ -8,6 +8,7 @@ from .nfw import NFWMiscentered
 from .xi_nl import XiNL
 from .sel_bias import SelBias, BiasPlateaus, MarginalisedBias
 from .frozen_bsel import FrozenSelBias, FrozenOperators
+from .frozen_delta_sigma_prj import FrozenDeltaSigmaPrj
 from .sigma_prj import SigmaPrj
 from .delta_sigma_prj import DeltaSigmaPrj
 from .config import DEFAULT_GRID
@@ -27,6 +28,7 @@ __all__ = [
     "SelBias",
     "FrozenSelBias",
     "FrozenOperators",
+    "FrozenDeltaSigmaPrj",
     "BiasPlateaus",
     "MarginalisedBias",
     "SigmaPrj",
