@@ -213,9 +213,14 @@ class SigmaPrj:
     # ---------------- b_sel cache --------------------------------------------
 
     def _bsel_at(self, thetas, lob, zob, precomp):
-        """One vectorised b_sel_marginalised call at all theta nodes."""
-        return self.sel_bias.b_sel_marginalised(
-            thetas, lob, zob, precomp=precomp)
+        """Marginalised b_sel(theta) at all theta nodes.
+
+        Consumes the ``MarginalisedBias`` dataclass (eq. brm of
+        docs/richness_selection_frozen.tex with the ltr-marginalised
+        plateaus) -- identical to ``b_sel_marginalised`` and available
+        on both the production ``SelBias`` and ``FrozenSelBias``.
+        """
+        return self.sel_bias.marginalised_bias(lob, zob, precomp=precomp)(thetas)
 
     # ---------------- per-theta inner (z, M) integral ------------------------
 

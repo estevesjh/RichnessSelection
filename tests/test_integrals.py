@@ -43,10 +43,16 @@ def _stack(cosmo):
     return dict(pk=pk, sm=sm, hmf=hmf, bias=bias, mor=mor, xi=xi)
 
 
-def _make_sb(cosmo, stack, Nz=80, Nth=10, n_ltr=60):
+def _make_sb(cosmo, stack, Nz=80, Nth=10, n_ltr=60, Nz_bias=None):
+    """Nz_bias defaults to Nz so existing call sites (which predate the
+    Nz_bias split) keep testing exactly what they asked for; pass
+    Nz_bias explicitly to test SelBias._P_operator's own (smaller,
+    default 48) z-grid independently of Nz (which SigmaPrj still uses)."""
+    if Nz_bias is None:
+        Nz_bias = Nz
     return SelBias(cosmo, stack['pk'], stack['hmf'], stack['bias'],
                    stack['mor'], xi_nl=stack['xi'],
-                   grid=GridConfig(Nz=Nz, Nth=Nth),
+                   grid=GridConfig(Nz=Nz, Nth=Nth, Nz_bias=Nz_bias),
                    n_ltr=n_ltr)
 
 
@@ -133,6 +139,50 @@ def quad_truth(cosmo, _stack):
 
 # ---------- Tests ---------------------------------------------------------
 
+class TestSelBiasNzBias:
+    """Nz_bias (default 48) is a separate, smaller z-node budget for
+    _P_operator's own ring+outer grid -- decoupled from Nz, which
+    SigmaPrj/DeltaSigmaPrj still read (unchanged) via SelBias._z_grid.
+    The ring+outer split enforces hard floors (n_ring>=9, n_outer>=15
+    per side), so Nz_bias=48 (n_ring=12, n_outer=18+18=48 total) sits
+    just above where those floors bind, at ~1.6-1.7x fewer expensive
+    per-z (theta,lambda,M) evaluations than Nz=80. See docs/GridConfig
+    and the z-axis analytic-exclusion review for the convergence table
+    this default is pinned from (worst case 0.045% across the 12 DES
+    Y3 bins vs an Nz=200,Nth=30 reference)."""
+
+    def test_default_Nz_bias_sub_01pct_of_quad(self, cosmo, _stack, quad_truth):
+        # No grid override at all -- exactly what a real caller gets.
+        sb = SelBias(cosmo, _stack['pk'], _stack['hmf'], _stack['bias'],
+                     _stack['mor'], xi_nl=_stack['xi'])
+        assert sb.grid.Nz_bias == 48
+        pre = sb.bias_precompute(20.0, 0.5)
+        for key in ('P1', 'I2', 'I1'):
+            rel_err = abs(pre[key] / quad_truth[key] - 1.0)
+            assert rel_err < 1e-3, (
+                f'{key}: {pre[key]:.5e} vs quad {quad_truth[key]:.5e}, '
+                f'rel_err={rel_err*100:.3f}% (expect < 0.1%)')
+
+    def test_Nz_bias_faster_than_Nz80(self, cosmo, _stack):
+        sb48 = _make_sb(cosmo, _stack, Nth=10, Nz_bias=48)
+        sb80 = _make_sb(cosmo, _stack, Nth=10, Nz_bias=80)
+        sb48.bias_precompute(20.0, 0.5); sb48._cache.clear()  # warm (CAMB/xi_NL lazy build)
+        sb80.bias_precompute(20.0, 0.5); sb80._cache.clear()
+        best48 = min(_timed_precompute(sb48) for _ in range(3))
+        best80 = min(_timed_precompute(sb80) for _ in range(3))
+        assert best48 < best80, (
+            f'Nz_bias=48 ({best48*1e3:.2f} ms) should be faster than '
+            f'Nz_bias=80 ({best80*1e3:.2f} ms)')
+
+
+def _timed_precompute(sb):
+    import time
+    sb._cache.clear()
+    t0 = time.perf_counter()
+    sb.bias_precompute(20.0, 0.5)
+    return time.perf_counter() - t0
+
+
 class TestSelBiasThetaSplit:
     """Test 1: split-at-exclusion converges at Nth=10 to < 0.1% of quad."""
 
@@ -201,7 +251,7 @@ class TestBsellMarginalisedSigmoid:
         m_grid = 10.0 ** np.linspace(log10_Mmin, sb.ln_M_max_log10, 50)
         hmf_m = sb.hmf(m_grid, zob)
         p_ltr_M = sb.mor.pdf(t_nodes[:, None], m_grid[None, :], zob)
-        prior_ltr = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
+        prior_ltr = np.trapezoid(p_ltr_M * (hmf_m * m_grid)[None, :],
                              np.log(m_grid), axis=1)
         p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(ltr), zob))
                               for ltr in t_nodes])

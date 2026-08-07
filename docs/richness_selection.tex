@@ -230,23 +230,100 @@ the observed richness of a target at \((\lob,\zob)\)
 (\citealt{Costanzi2026}, eq.~\texttt{weight}):
 \begin{equation}
 \rhoprj(\lambda,z,\theta\mid\lob,\zob)
-\;=\; w_z(z,\zob)\,f_A(\theta,\lob,\zob,\lambda,z)\,\lambda\,
-      \mathbf{1}_{\{\lambda<\lob\}}.
+\;=\; w_z(z,\zob)\,f_A(\theta,\lob,\zob,\lambda,z)\,\lambda,
+\qquad 0<\lambda<\lob,
 \label{eq:rho_prj}
 \end{equation}
-Here \(\lambda\) is the projected halo's true richness;
-\(z\) is its redshift; \(\theta\) is its angular separation from
-the target; \(w_z(z,\zob)\) is the parabolic photo-\(z\) kernel
-quantifying the probability that a galaxy at redshift \(z\) is
-counted in the target's aperture at \(\zob\);
-\(f_A(\theta,\lob,\zob,\lambda,z)\in[0,1]\) is the closed-form
-overlap fraction of the two \textsc{redMaPPer} disks (of the
-target and the projected halo); the factor \(\lambda\) converts
-``this halo is present'' into ``this halo contributes \(\lambda\)
-counts''; and the indicator
-\(\mathbf{1}_{\{\lambda<\lob\}}\) implements the
-\textsc{redMaPPer} ranking cut (only projected halos of lower
-richness than the target contaminate the target's aperture).
+and \(\rhoprj\equiv0\) for \(\lambda\ge\lob\)
+--- the \textsc{redMaPPer} ranking cut: only projected halos of
+\emph{lower} richness than the target contaminate the target's
+aperture. Rather than carry an indicator function through every
+equation below, this cut is stated once, here, and from now on
+enforced silently by writing every \(\lambda\)-integral with
+upper limit \(\lob\) (never \(\infty\)). Here \(\lambda\) is the
+projected halo's true richness; \(z\) is its redshift; \(\theta\)
+is its angular separation from the target; \(w_z(z,\zob)\) is the
+parabolic photo-\(z\) kernel quantifying the probability that a
+galaxy at redshift \(z\) is counted in the target's aperture at
+\(\zob\); \(f_A(\theta,\lob,\zob,\lambda,z)\in[0,1]\) is the
+closed-form overlap fraction of the two \textsc{redMaPPer} disks
+(of the target and the projected halo); and the factor \(\lambda\)
+converts ``this halo is present'' into ``this halo contributes
+\(\lambda\) counts''.
+
+\citealt{Costanzi2026} (\texttt{papers/Costanzi2026.tex},
+\S~``Projection kernel'', Fig.~1) states the same weight per
+projected halo \(i\) as
+\(\rhoprj_i = \lambda_i\,w(z_i,\zob)\,f_{A,i}\): both
+\(w(z_i,\zob)\) --- the photo-\(z\) kernel above, which sets how
+much line-of-sight weight the far zone carries and is \emph{not}
+negligible --- and the geometric factor \(f_{A,i}\) are needed;
+this subsection derives the latter.
+
+The overlap fraction \(f_A\) encodes the \textsc{redMaPPer}
+membership geometry: the model treats the projected halo's
+\(\lambda\) member galaxies as uniformly distributed over the
+halo's own richness disk, of angular radius
+\(\theta_\lambda(\lambda,z) = R_\lambda(\lambda)(1+z)/\chi(z)\);
+the target gains only those galaxies that fall inside \emph{its}
+disk, of radius
+\(\theta_{\lambda,{\rm ob}} \equiv \theta_\lambda(\lob,\zob)\).
+For a centre separation \(\theta\) the expected gained count is
+therefore \(\lambda\) times the fraction of the projector's disk
+area that overlaps the target's:
+\begin{equation}
+f_A(\theta,\lob,\zob,\lambda,z)
+\;=\;
+\frac{A_{\rm ov}(\theta,\theta_{\lambda,{\rm ob}},\theta_\lambda(\lambda,z))}
+     {\pi\,\theta_\lambda^2(\lambda,z)},
+\label{eq:fA_def}
+\end{equation}
+with \(A_{\rm ov}\) the circle--circle intersection (``lens'')
+area of the target and projector disks at centre distance
+\(\theta\),
+\begin{align}
+A_{\rm ov}(\theta,\theta_{\lambda,{\rm ob}},\theta_\lambda)
+=\;& \theta_{\lambda,{\rm ob}}^2
+\arccos\!\Big(\frac{\theta^2+\theta_{\lambda,{\rm ob}}^2
+                     -\theta_\lambda^2}{2\theta\,\theta_{\lambda,{\rm ob}}}\Big)
++ \theta_\lambda^2
+\arccos\!\Big(\frac{\theta^2+\theta_\lambda^2
+                     -\theta_{\lambda,{\rm ob}}^2}{2\theta\,\theta_\lambda}\Big)
+\notag\\
+&- \tfrac12\sqrt{\big[(\theta_{\lambda,{\rm ob}}+\theta_\lambda)^2-\theta^2\big]
+                 \big[\theta^2-(\theta_{\lambda,{\rm ob}}-\theta_\lambda)^2\big]}
+\label{eq:A_ov}
+\end{align}
+for \(|\theta_{\lambda,{\rm ob}}-\theta_\lambda|<\theta
+<\theta_{\lambda,{\rm ob}}+\theta_\lambda\), with
+\(A_{\rm ov}=\pi\min(\theta_{\lambda,{\rm ob}},\theta_\lambda)^2\)
+for \(\theta\le|\theta_{\lambda,{\rm ob}}-\theta_\lambda|\)
+(full containment) and \(A_{\rm ov}=0\) for
+\(\theta\ge\theta_{\lambda,{\rm ob}}+\theta_\lambda\) (no contact).
+Note the normalisation: the denominator of eq.~\eqref{eq:fA_def}
+is the \emph{projector's} own disk area, not the target's, because
+\(f_A\) is the fraction of the projector's galaxies captured by
+the target aperture. This makes \(f_A\in[0,1]\) exact, with
+\(f_A=1\) when the projector disk sits entirely inside the
+target's (\(\theta \le \theta_{\lambda,{\rm ob}}-\theta_\lambda\),
+always reachable at \(z\simeq\zob\) since \(\lambda<\lob\) implies
+\(\theta_\lambda<\theta_{\lambda,{\rm ob}}\)) and \(f_A=0\) beyond
+\(\theta_{\lambda,{\rm ob}}+\theta_\lambda\) --- so the
+\(\theta\)-integral support is finite. \(A_{\rm ov}\) is
+homogeneous of degree two in its three angular arguments, hence
+\(f_A\) depends only on the ratio
+\(\theta_\lambda/\theta_{\lambda,{\rm ob}}\) --- the property the
+frozen-physics companion note
+(\texttt{docs/richness\_selection\_frozen.tex}, \S4) exploits.
+Implementation:
+\texttt{richness\_selection.geometry.area\_overlap}, which always
+normalises by the \emph{second} disk's area regardless of which
+disk is larger; the appendix-A formula of \citealt{Costanzi2026}
+instead normalises by
+\(\pi\min(\theta_{\lambda,{\rm ob}},\theta_\lambda)^2\), so the two
+disagree when a low-\(z\) foreground halo's own disk exceeds the
+target's (\(\theta_\lambda>\theta_{\lambda,{\rm ob}}\), possible
+even for \(\lambda<\lob\) since angular size grows as \(z\to0\)).
 
 The \emph{\(\Pop[X]\) operator} is the line-of-sight-averaged
 integral of an arbitrary \(X(M,z,\theta)\) weighted by the halo
@@ -666,8 +743,7 @@ of eq.~\eqref{eq:Pop} evaluated at a single \(z\),
 \mathcal{I}_{\rm inner}^{X}(z)
 \;\equiv\;
 \int\!dM\,n(M,z)\!
-\int\!d\lambda\,P(\lambda\mid M,z)\,\lambda\,
-\mathbf{1}_{\{\lambda<\lob\}}
+\int_0^{\lob}\!d\lambda\,P(\lambda\mid M,z)\,\lambda\,
 \cdot 2\pi\!\int\!d\theta\,\sin\theta\;
 f_A(\theta,\lob,\zob,\lambda,z)\,X(M,z,\theta\mid\zob),
 \label{eq:Iinner}
@@ -746,6 +822,30 @@ Edge cases (\(R_{\rm excl}\) exceeds the photo-\(z\) support, or
 the ring band is wider than it) degrade gracefully via empty-array
 guards.
 
+\paragraph{\texttt{Nz\_bias}: a smaller, decoupled budget for \texttt{\_P\_operator}.}
+The \(N_z\!=\!80\) budget above is tuned to \(\avg{\Sprj}\)'s own
+needs via \texttt{SigmaPrj.\_build\_zM\_context} (which calls the same
+\texttt{\_z\_grid}) and is unchanged. \texttt{SelBias.\_P\_operator}
+now reads a separate \texttt{GridConfig.Nz\_bias} (default \(48\)) for
+its own \((\Pop[1],I_1,I_2)\) z-grid. The ring+outer split enforces
+hard floors (\(N_{\rm ring}\!\geq\!9\), \(N_{\rm outer}\!\geq\!15\) per
+side), so any \(N_z\) below \(\sim\!40\) collapses to the same
+39-node grid; \(48\) sits just above that floor. Against an
+\(N_z\!=\!200,N_\theta\!=\!30\) reference across the 12 DES Y3
+\((\lob,\zob)\) bins, \(N_z\!=\!48\) reaches \(0.045\%\) worst-case
+error (regression test
+\texttt{TestSelBiasNzBias::test\_default\_Nz\_bias\_sub\_01pct\_of\_quad}),
+comfortably inside the \(0.1\%\) bar the quad-matched tests enforce,
+for a measured \(\sim\!1.6\)--\(1.7\times\) reduction in per-call
+evaluation time (\texttt{validations/nz\_bias\_convergence.py}). An
+earlier design replaced the ring/outer GL entirely with a
+polynomial-fit-plus-closed-form scheme (sampling \(K\!\sim\!5\)--9
+nodes and integrating the fit analytically); that was dropped after
+finding \(\xinl\) goes negative over \(\sim\!20\)--\(25\%\) of the
+outer decay range at higher \(\zob\) (BAO-scale separations), which
+breaks a log-space power-law fit. The existing GL scheme has no such
+hazard, and — per the floors above — already had slack.
+
 \clearpage
 \section*{\textcolor{harvardcrimson}{API and glossary}}
 \addcontentsline{toc}{section}{API and glossary}
@@ -804,7 +904,10 @@ The \(\avg{\Sprj}\) orchestrator (eq.~\ref{eq:Sprj}).
 \(\avg{\Sprj(R)}\).
 
 \paragraph{\texttt{GridConfig}} (\texttt{config.py}).
-Grid-size defaults: \(N_z\!=\!80\), \(N_\theta\!=\!10\),
+Grid-size defaults: \(N_z\!=\!80\) (read by \texttt{SigmaPrj}/
+\texttt{DeltaSigmaPrj} via \texttt{SelBias.\_z\_grid}),
+\(N_z^{\rm bias}\!=\!48\) (read only by
+\texttt{SelBias.\_P\_operator}, \S\ref{sec:zgrid}), \(N_\theta\!=\!10\),
 \(N_M\!=\!24\). \(N_\lambda\) is a separate \texttt{SelBias}
 constructor arg (default 60).
 
@@ -836,7 +939,7 @@ gives the Python call.
 \midrule
 \multicolumn{4}{@{}l}{\emph{Projection kernel and \(\Pop[X]\) operator}} \\
 \midrule
-\(\rhoprj\) & Per-halo projection weight \(w_z\,f_A\,\lambda\,\mathbf{1}_{\{\lambda<\lob\}}\) &
+\(\rhoprj\) & Per-halo projection weight \(w_z\,f_A\,\lambda\) (\(\lambda<\lob\)) &
   \eqref{eq:rho_prj} & internal to \texttt{SelBias.\_P\_operator} \\
 \(\Pop[X]\) & LoS average of \(X\) weighted by \(\rhoprj\) and halo distribution &
   \eqref{eq:Pop} & \texttt{SelBias.\_P\_operator(lob, zob)} \\

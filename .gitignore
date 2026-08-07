@@ -8,6 +8,13 @@ dist/
 *.swp
 .DS_Store
 
+# figures
+docs/*.png
+docs/figs/
+
+# venv
+.venv
+
 # LaTeX aux files
 *.aux
 *.log

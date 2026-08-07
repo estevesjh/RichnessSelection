@@ -34,14 +34,14 @@ def test_mor_pdf_positive_and_normalises(mor):
     ltr = np.linspace(0.0, 400.0, 5000)
     p = mor.pdf(ltr[:, None], np.array([1e14])[None, :], 0.5)[:, 0]
     assert (p >= 0).all()
-    assert abs(np.trapz(p, ltr) - 1.0) < 0.01
+    assert abs(np.trapezoid(p, ltr) - 1.0) < 0.01
 
 
 def test_mor_partial_moment(mor):
     """At very large lob the partial moment saturates to <ltr>."""
     ltr = np.linspace(0.0, 400.0, 5000)
     p = mor.pdf(ltr[:, None], np.array([1e14])[None, :], 0.5)[:, 0]
-    full = np.trapz(ltr * p, ltr)
+    full = np.trapezoid(ltr * p, ltr)
     big = mor.lambda_mean_below(np.array([1e14]), 0.5, 1e6)[0]
     assert abs(big / full - 1.0) < 1e-3
 

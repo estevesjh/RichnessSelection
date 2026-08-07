@@ -97,7 +97,7 @@ class MOR:
         ltr_grid = np.linspace(0.0, upper, ltr_n)
         p = self.pdf(ltr_grid[:, None], M_arr[None, :], z)   # (Nltr, NM)
         integrand = ltr_grid[:, None] * p
-        out = np.trapz(integrand, ltr_grid, axis=0)
+        out = np.trapezoid(integrand, ltr_grid, axis=0)
         if np.ndim(M) == 0:
             return float(out[0])
         return out

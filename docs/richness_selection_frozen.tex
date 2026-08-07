@@ -1,0 +1,1874 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[
+  left = 20mm, right = 20mm, top = 22mm, bottom = 22mm,
+]{geometry}
+
+\usepackage{amsmath,amsfonts,amssymb,bm}
+\usepackage[english]{babel}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{orcidlink}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+
+\definecolor{harvardcrimson}{HTML}{8C1D40}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=harvardcrimson,
+  citecolor=harvardcrimson,
+  urlcolor=harvardcrimson,
+  hypertexnames=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{harvardcrimson}{\textbf{\texttt{RichnessSelection}: counting eligible galaxies}}}
+\lhead{\textcolor{harvardcrimson}{\textbf{J.\,H.\,Esteves}}}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+\renewcommand{\baselinestretch}{1.15}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\bottomfraction}{0.9}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.95}
+\setlength{\intextsep}{8pt}
+\setlength{\textfloatsep}{10pt}
+\setlength{\floatsep}{10pt}
+
+\newcommand{\lob}{\lambda^{\rm ob}}
+\newcommand{\ltr}{\lambda^{\rm tr}}
+\newcommand{\zob}{z^{\rm ob}}
+\newcommand{\dprj}{\Delta^{\rm prj}}
+\newcommand{\ximm}{\xi_{\rm mm}}
+\newcommand{\xihm}{\xi_{\rm hm}}
+\newcommand{\hMpc}{h^{-1}\,\mathrm{Mpc}}
+\newcommand{\hMsun}{h^{-1}\,M_{\odot}}
+\newcommand{\Pop}{\mathcal{P}}
+\newcommand{\avg}[1]{\langle #1 \rangle}
+\newcommand{\Rex}{R_{\rm excl}}
+\newcommand{\rp}{s}
+\newcommand{\nlss}{n_{\rm lss}}
+\newcommand{\nrnd}{n_{\rm rnd}}
+\newcommand{\rhoprj}{\rho^{\rm prj}}
+\newcommand{\bsel}{b_{\rm sel}}
+\newcommand{\btar}{b_{\rm target}}
+\newcommand{\bsmall}{b_{\rm sel}^{\rm small}}
+\newcommand{\blarge}{b_{\rm sel}^{\rm large}}
+\newcommand{\Ncal}{\mathcal{N}}
+\newcommand{\Nbar}{\bar{N}_{\rm rnd}}
+\newcommand{\Klss}{K_{\rm lss}}
+\newcommand{\KlssInf}{K_{\rm lss}^{\infty}}
+\newcommand{\Nlss}{N_{\rm lss}}
+\newcommand{\Nrnd}{N_{\rm RND}}
+\newcommand{\thob}{\theta_{\lambda,{\rm ob}}}
+\newcommand{\brm}{b_{\rm rm}}
+\newcommand{\brmss}{b_{\rm rm}^{\rm ss}}
+\newcommand{\brmls}{b_{\rm rm}^{\rm ls}}
+\newcommand{\bhalo}{b_{\rm halo}}
+\newcommand{\Dl}{\langle \Delta\lambda\rangle}
+\newcommand{\Dp}{\langle \dprj\rangle}
+\newcommand{\tDl}{\langle \widetilde{\Delta\lambda}\rangle}
+\newcommand{\tDp}{\langle \widetilde{\Delta}^{\rm prj}\rangle}
+% channel operators (single-sourced; use these, never retype)
+\newcommand{\Dlrnd}{\langle \Delta\lambda\rangle_{\rm rnd}}
+\newcommand{\Dllss}[1]{\langle \Delta\lambda(#1)\rangle_{\rm lss}}
+\newcommand{\tDllss}[1]{\langle \widetilde{\Delta\lambda}(#1)\rangle_{\rm lss}}
+\newcommand{\Dprnd}{\langle \dprj\rangle_{\rm rnd}}
+\newcommand{\Dpss}{\langle \dprj\rangle^{\rm ss}_{\rm lss}}
+\newcommand{\Dpls}{\langle \dprj\rangle^{\rm ls}_{\rm lss}}
+\newcommand{\tDpss}{\langle \widetilde{\Delta}^{\rm prj}\rangle^{\rm ss}_{\rm lss}}
+\newcommand{\tDpls}{\langle \widetilde{\Delta}^{\rm prj}\rangle^{\rm ls}_{\rm lss}}
+\newcommand{\dprjx}{\delta_{\rm prj}}
+% section 2 (frozen-algorithm) macros -- bare tokens, external parens,
+% e.g. \Ilam(x), \Ilamss(0), \Dlb(z) -- matching the \Dl(z) convention above
+\newcommand{\Ilam}{I_\lambda}
+\newcommand{\Ilamss}{I_\lambda^{\rm ss}}
+\newcommand{\Ilamls}{I_\lambda^{\rm ls}}
+\newcommand{\Dlb}{\langle \Delta\lambda\rangle_b}
+\newcommand{\pis}{\pi_s}
+\newcommand{\rmax}{r_{\max}}
+\newcommand{\mulo}{\mu_{\rm lo}}
+\newcommand{\muhi}{\mu_{\rm hi}}
+\newcommand{\barw}{\bar w}
+\newcommand{\Ass}{A_{\rm ss}}
+\newcommand{\Bss}{B_{\rm ss}}
+\newcommand{\Als}{A_{\rm ls}}
+\newcommand{\Bls}{B_{\rm ls}}
+\newcommand{\Gss}{G_{\rm ss}}
+\newcommand{\DSprj}{\Delta\Sigma^{\rm prj}}
+\newcommand{\DSmis}{\Delta\Sigma_{\rm mis}}
+\newcommand{\Rmis}{R_{\rm mis}}
+
+\title{\texorpdfstring{%
+\textcolor{harvardcrimson}{\textbf{\texttt{RichnessSelection}:\\
+counting the eligible galaxies behind the projection integrals}}%
+}{RichnessSelection: counting the eligible galaxies behind the projection integrals}}
+\author{Johnny H.\ Esteves\,\orcidlink{0000-0003-4373-2386}\\[2pt]
+{\small Department of Physics, Harvard University}}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+% ------------------------------------------------------------------
+% OLD ABSTRACT — commented out during the re-write (kept for reference)
+% ------------------------------------------------------------------
+\iffalse
+\noindent
+Projection inflates the observed richness of an optically selected
+cluster: $\lob = \ltr + \dprj$, where $\dprj$ counts galaxies
+donated by other structures along the line of sight. This note
+recasts the projection integrals of \texttt{RichnessSelection}
+(\texttt{docs/richness\_selection.tex}, eq.~\texttt{Pop}) as what
+they physically are: \emph{weighted counts of eligible galaxies}
+in the target's photo-$z$ cylinder, organised by the standard
+two-tracer logic --- the target cluster is a biased tracer
+($\btar$), every donor halo is a biased tracer ($b(M,z)$), and
+their correlation is $\btar\,b(M,z)\,\ximm(r)$. The contamination
+then splits exactly like a halo-model profile, one level down:
+a Poisson count $\Nbar$ (donors placed at random --- the $b=0$
+limit) plus a large-scale-structure count
+$\Nlss = \btar\,\Klss$, where $\Klss$ is the donor-bias-weighted
+contamination kernel --- one bias short of a complete two-tracer
+term, waiting for the target's. Three moves make the counts
+nearly analytic. (i)~The contamination halos --- everything
+percolation has not already used up --- are contracted once per
+$(\lob,\zob)$ into 1-D \emph{counting kernels} $\Ncal_{\rm rnd}(x)$,
+$\Ncal_{\rm lss}(x)$: the mean number of galaxies donated into the target
+aperture from scaled transverse offset $x$, unweighted and
+bias-weighted. (ii)~Separations are decomposed
+into a line-of-sight component
+$\pi$ and a sky-plane component $\rp$, with 3-D separation
+$r^2=\pi^2+\rp^2$ \emph{exactly}; the halo-exclusion ball and the
+clustering kernel $\ximm(r)$ become spherical, and the twin peaks
+and ring plateau that plague the original $z$-integrand never
+form. (iii)~The slowly evolving weights (HMF, bias, MOR, aperture)
+are frozen at $\zob$ inside the exclusion-affected zone,
+protected by a $10^{3}$ scale separation and by parity. The
+Poisson count $\Nbar$ collapses to a 1-D integral by a
+total-donation theorem (a donor's disk size redistributes its
+galaxies in angle but cannot change their total); the clustered
+kernels $\Klss$, $\KlssInf$ become one smooth radial integral plus
+one line-of-sight integral. All approximations are validated
+against \texttt{scipy.integrate.quad}: the frozen ring alone
+costs $0.001$--$0.003\%$, the complete assembly
+$0.006$--$0.04\%$ on $(\Nbar, \KlssInf, \Klss)$, and the
+end-to-end selection-bias profile $\bsel(\theta)$ agrees with the
+production pipeline to $\le0.07\%$ of the profile scale
+(\S\ref{sec:bsel_validation}) --- all far below the $0.1\%$
+pipeline tolerance.
+\fi
+
+\tableofcontents
+
+\section{The physical question: which galaxies contaminate \texorpdfstring{$\lob$}{lambda-ob}?}
+\label{sec:question}
+
+\textsc{redMaPPer} estimates a cluster's richness by counting
+member galaxies inside a disk of angular radius $\theta_\lambda$
+and selecting them with an effective photo-$z$ window around the
+cluster, $w(z,\zob)$: the probability that a galaxy at redshift
+$z$ passes the photo-$z$ cut of a target at $\zob$ (the parabolic
+kernel of the production pipeline; never approximated in this
+note). Any galaxy that satisfies both cuts is counted, whether or
+not it belongs to the cluster.
+
+\paragraph{Background: a scale-dependent selection bias.}
+Richness selection is not mass selection. At fixed mass, systems
+whose line of sight carries excess correlated structure scatter
+\emph{up} in observed richness, so a sample selected at $\lob$ is
+preferentially drawn from overdense environments and clusters
+more strongly than a mass-matched sample. The effect is
+scale-dependent. At large separations the selected sample behaves
+as a linear tracer with a boosted, constant bias amplitude. At
+small separations --- within a few richness apertures --- the very
+structure that inflated $\lob$ sits inside or near the
+measurement itself, and the effective amplitude differs again.
+We encode this in a \textsc{redMaPPer} selection bias
+$\brm(\theta,\lob,\zob)$, defined as the effective tracer bias of
+the selected sample in its cross-correlation with halos of mass
+$M$:
+\begin{equation}
+\xi_{\rm rm,h}(\theta; M, z)
+= b(M, z)\; \brm(\theta, \lob, \zob)\;
+\ximm\big(|\bm{r}_{\rm rm} - \bm{r}_{\rm h}|\big),
+\label{eq:xi_rmh}
+\end{equation}
+with $b(M,z)$ the halo bias of the correlated structure, $\ximm$
+the nonlinear matter--matter correlation function (halofit), and
+$|\bm{r}_{\rm rm}-\bm{r}_{\rm h}|$ the 3-D comoving separation
+between the target and the halo --- both tracers are biased, and
+the cross-correlation carries both biases. Following the
+simulation-calibrated model of Costanzi et al., we take
+$\brm$ to be two plateaus bridged by a fixed sigmoid,
+\begin{equation}
+\brm(\theta, \lob, \zob)
+= \brmss\,[1-\sigma(\theta)] + \brmls\,\sigma(\theta),
+\qquad
+\sigma(\theta)=\Big[1+e^{-k(\theta-\theta_0)}\Big]^{-1},
+\label{eq:brm}
+\end{equation}
+with $k=2.5/\thob$ and $\theta_0=\thob/2$, where
+$\thob$ is the target's aperture angle: $\sigma$ runs from
+$\simeq0$ well inside the aperture to $1$ at large separations,
+so $[1-\sigma]$ tags the small-scale regime governed by the
+plateau $\brmss$ and $\sigma$ the large-scale regime governed by
+$\brmls$. The transition at half the aperture, and the sharpness
+$k$, are held fixed; the two plateaus are the physical unknowns.
+
+This bias is not bookkeeping: it propagates directly into the
+stacked weak-lensing observable. The selected sample's
+large-scale-structure lensing contribution --- the revisited
+second-halo term, under the correlation model of
+eq.~\eqref{eq:xi_rmh} --- reads
+\begin{align}
+\avg{\DSprj(R\mid\lob,\zob)} =\;
+&2\pi\int d\theta\,\sin\theta
+\int dz\,\frac{dV}{dz\,d\Omega}
+\int dM\,n(M,z)
+\notag\\
+&\times\,
+\bigl[\,1 + b(M,z)\,\brm(\theta,\lob,\zob)\,
+\ximm\big(|\bm{r}_{\rm rm}-\bm{r}_{\rm h}|\big)\,\bigr]
+\notag\\
+&\times\;
+\DSmis\bigl(R\mid M,z,\Rmis=\theta\,\chi(\zob)\bigr),
+\label{eq:DSprj}
+\end{align}
+where $\DSmis$ is the excess surface density of a halo of mass
+$M$ miscentred by the transverse offset $\Rmis$ corresponding to
+the angular separation $\theta$, and the integral is understood
+to be normalised by the same $(z,M)$ halo measure. Every
+projected structure that lenses the source galaxies behind the
+target is weighted by exactly the $\brm(\theta)$ defined above:
+an error in the selection-bias plateaus is an error in the
+cluster lensing profile, and hence in the mass calibration.
+
+The plateaus are not free functions --- the remainder of this
+section shows they are fixed by requiring the projected-galaxy
+budget of the sample to close.
+
+\paragraph{Deriving the scale-dependent bias.} The observed
+richness can be split as
+\begin{equation}
+\lob \;=\; \ltr \;+\; \Dp,
+\label{eq:lob_split}
+\end{equation}
+with $\dprj$ the number of \emph{projected} galaxies: members of
+other halos in the target's photo-$z$ cylinder whose sky positions
+fall inside the target's aperture. Specifically, for clusters at
+redshift $\zob$ with observed richness $\lob$ and true richness
+$\ltr$, the mean contamination due to projected systems reads
+\begin{equation}
+\Dp(\lob,\ltr,\zob)
+= 2\pi\int_0^{\pi} d\theta \sin\theta \;
+\Dl_\theta \,,
+\label{eq:Dprj_outer}
+\end{equation}
+where $\Dl_\theta$ is the mean projected richness per unit solid
+angle contributed at angular separation $\theta$ from the target
+centre. It encodes the \textsc{redMaPPer}--halo association over
+the photo-$z$ cylinder:
+\begin{align}
+\Dl_\theta
+\;&\equiv\; \Dlrnd
+\;+\; \brmss\,[1-\sigma(\theta)]\; \tDllss{\theta}
+\;+\; \brmls\,\sigma(\theta)\; \tDllss{\theta}
+\label{eq:Dlam_split}\\
+&=\int\!dz\,\frac{dV}{dz\,d\Omega}(z)\,
+w(z,\zob) \int\!dM\,n(M,z)\,
+\big[1+\xi_{\rm rm,h}(\theta;M,z)\big]
+\notag\\
+&\hspace{9em}\times
+\int_0^{\lob}\!d\lambda\,P(\lambda\mid M, z)\,\lambda\,
+f_A\big(\theta,\thob,\theta_\lambda(\lambda,z)\big),
+\label{eq:Pop}
+\end{align}
+reading right to left: each halo of mass $M$ at redshift $z$
+hosts $\lambda$ galaxies with probability $P(\lambda\mid M,z)$; a
+fraction $f_A$ of them falls inside the target aperture; halos
+are counted by the mass function $n(M,z)$ and placed either
+uniformly along the cylinder (the $1$) or clustered around the
+target (the $\xi_{\rm rm,h}$); the photo-$z$ window $w$ selects
+in redshift. Two definitions:
+\begin{itemize}
+\item \textbf{Eligibility ($\lambda<\lob$).}
+      \textsc{redMaPPer} processes halos in decreasing richness
+      order and lets richer systems claim member galaxies first,
+      so only halos with $\lambda<\lob$ still have galaxies left
+      to contaminate the target --- the upper limit of every
+      $\lambda$-integral is the percolation cut, not a
+      convenience.
+\item \textbf{Capture fraction $f_A$.} A projected halo's
+      $\lambda$ galaxies are spread uniformly over its own disk
+      of angular radius $\theta_\lambda(\lambda,z)$; the target
+      aperture (radius $\thob$) captures the fraction
+      $f_A = A_{\rm ov}/(\pi\theta_\lambda^2)\in[0,1]$, with
+      $A_{\rm ov}$ the two-disk overlap area at centre separation
+      $\theta$. $f_A$ vanishes for
+      $\theta>\thob+\theta_\lambda$, so the support of
+      eq.~\eqref{eq:Dprj_outer} ends at $\theta\le 2\thob$
+      despite the formal $\pi$ upper limit. Because
+      $\theta_\lambda$ depends on the projected halo's own
+      $\lambda$, $f_A$ sits inside the $\lambda$-integral.
+\end{itemize}
+
+Substituting the correlation model
+eqs.~\eqref{eq:xi_rmh}--\eqref{eq:brm} into eq.~\eqref{eq:Pop}
+produces exactly the decomposition announced in
+eq.~\eqref{eq:Dlam_split}, with the two channel profiles defined
+by the weight they carry under the same
+$(z,M,\lambda)$-integral:
+\begin{align}
+\Dlrnd
+&= \int\!dz\,\frac{dV}{dz\,d\Omega}\,w
+\int\!dM\,n
+\int_0^{\lob}\!d\lambda\,P\,\lambda
+&&\text{(weight $1$: uniform interlopers)},
+\label{eq:Dlam_rnd}\\
+\tDllss{\theta}
+&= \int\!dz\,\frac{dV}{dz\,d\Omega}\,w
+\int\!dM\,n\; b\,\ximm
+\int_0^{\lob}\!d\lambda\,P\,\lambda\,f_A
+&&\text{(weight $b\,\ximm$: clustered structures)},
+\label{eq:Dlam_lss}
+\end{align}
+where the tilde marks that the target's own bias $\brm$ has been
+divided out ($\brm$ set to one): $\tDllss{\theta}$ is a pure
+integral, computable without knowing the selection bias, and the
+unknown plateaus $\brmss$, $\brmls$ multiply it from outside.
+Note that the uniform channel carries no capture fraction and no
+$\theta$: smearing a uniform field over the donors' disks leaves
+it uniform, and $f_A$ integrates out exactly ---
+$\int d^2\theta\, f_A = \pi\thob^2$ for every donor size (the
+total-donation identity) --- so $\Dlrnd$ is the mean eligible
+richness per unit solid angle in the cylinder, constant in
+$\theta$, and comes out of the sky integral of
+eq.~\eqref{eq:Dprj_outer}.
+
+\paragraph{Assembled contamination.} Inserting
+eq.~\eqref{eq:Dlam_split} into eq.~\eqref{eq:Dprj_outer} and
+integrating over the sky:
+\begin{equation}
+\Dp \;=\; \Dprnd
+\;+\; \Dpss
+\;+\; \Dpls,
+\label{eq:Dprj_split}
+\end{equation}
+with the three members
+\begin{align}
+\Dprnd
+&= \pi\,\thob^2\; \Dlrnd,
+\label{eq:Dprj_rnd}\\
+\Dpss
+&= \brmss\; \tDpss,
+\qquad
+\tDpss
+= 2\pi\!\int_0^\pi\! d\theta\sin\theta\;
+[1-\sigma(\theta)]\; \tDllss{\theta},
+\label{eq:Dprj_ss}\\
+\Dpls
+&= \brmls\; \tDpls,
+\qquad
+\tDpls
+= 2\pi\!\int_0^\pi\! d\theta\sin\theta\;
+\sigma(\theta)\; \tDllss{\theta}.
+\label{eq:Dprj_ls}
+\end{align}
+$\Dprnd$ counts the uniform (random) interlopers --- the constant
+$\Dlrnd$ times the aperture area, per the total-donation identity
+above; $\tDpss$ and $\tDpls$ are the small- and large-scale
+halves of the clustered (large-scale-structure) contamination,
+computed numerically with unit selection bias. In the production
+code these are \texttt{P1}, $I_2-I_1$ and $I_1$ respectively.
+
+\paragraph{Closing the selection bias.} The plateaus follow from
+two conditions. First, the large-scale plateau is anchored to the
+halo bias of a mass-selected sample at the same $(\lob,\zob)$,
+\begin{equation}
+\bhalo(\lob,\zob)
+= \frac{\int d\ln M\;M\,n(M,\zob)\,b(M,\zob)\,P(\lob\mid M,\zob)}
+       {\int d\ln M\;M\,n(M,\zob)\,P(\lob\mid M,\zob)},
+\label{eq:bhalo}
+\end{equation}
+through the Buzzard-calibrated empirical relation
+\begin{equation}
+\brmls \;=\; \bhalo \left[ 1 + 0.13\, \dprjx\right],
+\qquad
+\dprjx
+= \frac{\lob-\ltr}{\Dprnd} - 1,
+\label{eq:bls}
+\end{equation}
+where $\dprjx$ measures the excess of the observed inflation over
+the uniform-interloper expectation $\Dprnd$ of
+eq.~\eqref{eq:Dprj_rnd}. Second, the observed inflation must
+be exactly accounted for: substituting
+eqs.~\eqref{eq:Dprj_rnd}--\eqref{eq:Dprj_ls} into
+eqs.~\eqref{eq:lob_split} and \eqref{eq:Dprj_split},
+\begin{equation}
+\lob-\ltr = \Dprnd
++ \brmls\,\tDpls
++ \brmss\,\tDpss,
+\label{eq:budget}
+\end{equation}
+which closes the small-scale plateau as the remaining linear
+unknown:
+\begin{equation}
+\boxed{\;
+\brmss \;=\;
+\frac{(\lob-\ltr) - \Dprnd - \Dpls}
+     {\tDpss}.
+\;}
+\label{eq:bss}
+\end{equation}
+
+\paragraph{Algorithm.} The computation at fixed
+$(\lob,\ltr,\zob)$ is therefore four numerical steps and one
+closure:
+\begin{enumerate}
+\item compute $\bhalo(\lob,\zob)$, eq.~\eqref{eq:bhalo} --- a
+      1-D mass integral;
+\item compute $\Dprnd$, eq.~\eqref{eq:Dprj_rnd} --- the constant
+      $\Dlrnd$ times the aperture area;
+\item form $\dprjx$ and the large-scale plateau $\brmls$,
+      eq.~\eqref{eq:bls};
+\item compute the unit-bias clustered integrals $\tDpss$ and
+      $\tDpls$, eqs.~\eqref{eq:Dprj_ss}--\eqref{eq:Dprj_ls};
+\item close the small-scale plateau $\brmss$,
+      eq.~\eqref{eq:bss}.
+\end{enumerate}
+With $\brmss$ and $\brmls$ in hand, eq.~\eqref{eq:brm} returns
+the full scale-dependent selection bias
+$\brm(\theta,\lob,\zob)$.
+
+\section{The frozen-physics algorithm}
+\label{sec:frozen_algo}
+
+The operators of \S\ref{sec:question} are 4-D quadratures over
+$(z, M, \lambda, \theta)$, and in the original variables the
+integrand is numerically hostile: the halo-exclusion condition,
+sliced along $z$, produces two sharp peaks bridged by a plateau
+in the $z$-integrand, on a scale $\delta z\sim 10^{-3}$. This
+section derives the equivalent --- but numerically friendly ---
+forms actually implemented, built on one physical observation and
+one change of variables.
+
+\subsection{Freezing the slow redshift dependences}
+\label{sec:freeze}
+
+The redshift barely varies across the scales that matter. The
+redMaPPer photo-$z$ window, $\sigma_z(z)$ of \texttt{photoz.py}
+(the DES-Y3 richness-estimator kernel, read off a calibration
+table --- not a single-galaxy photo-$z$ error), has width
+$\sigma_z\simeq0.09$ at $\zob=0.5$, i.e.\ comoving
+$\sigma_\chi\simeq205\,\hMpc$
+($\sigma_\chi\equiv\tfrac12[\chi(\zob+\sigma_z)-\chi(\zob-\sigma_z)]$).
+It is much wider than the naive single-galaxy estimate
+$\sigma_z^{\rm gal}\sim0.01(1+z)\simeq0.013$ at $z=0.3$
+($\sigma_\chi^{\rm gal}\simeq34\,\hMpc$): $\sigma_z(z)$ is the
+scatter of the richness \emph{estimator} itself, built from many
+member galaxies and their individual photo-$z$'s, not the
+redshift error of any one galaxy. Meanwhile the exclusion
+structure lives on
+$\Rex = R_\lambda(\lob)(1+\zob)\simeq1.1\,\hMpc$
+($\delta z\simeq5\times10^{-4}$); the astrophysical weights ---
+$n(M,z)$, $b(M,z)$, $P(\lambda\mid M,z)$, the aperture
+$\theta_\lambda(\lambda,z)$ --- evolve on $\Delta z\sim0.1$--$1$.
+We therefore \emph{freeze} the slow weights at $\zob$ inside the
+exclusion-affected zone ($|\chi(z)-\chi_o|\lesssim20\Rex$,
+i.e.\ $\Delta z\lesssim10^{-2}$; $\chi_o\equiv\chi(\zob)$). Two
+protections control the error: the drift itself is
+$\partial_z\ln(\cdot)\,\Delta z\lesssim10^{-2}$, and its leading
+term is \emph{odd} in $\chi(z)-\chi_o$ while the correlation
+kernel is even, so the linear error integrates to zero and only
+the quadratic survives, $\sim10^{-4}$. Direct validation against
+\texttt{scipy.quad} puts the freeze at $0.001$--$0.003\%$ on the
+clustered operators across the DES-Y3 range. The photo-$z$
+window $w(z,\zob)$ is \emph{never} frozen --- it is the one
+genuine line-of-sight structure and stays explicit in every
+integral below.
+
+\subsection{Sky variables}
+\label{sec:sky_vars}
+
+Both sharp structures --- the exclusion ball and the correlation
+function --- depend only on the 3-D separation between target and
+halo, while the aperture is transverse and the photo-$z$ window
+is line-of-sight. Decompose the separation accordingly: a
+line-of-sight component and an exact sky-plane (transverse)
+component,
+\begin{equation}
+\pi \equiv \chi(z)-\chi_o,
+\qquad
+s \equiv 2\sqrt{\chi\chi_o}\,\sin(\theta/2)
+\quad\Longrightarrow\quad
+r^2 = \pi^2 + s^2 \;\;\text{(exact)},
+\label{eq:sky_vars}
+\end{equation}
+where $r=|\bm{r}_{\rm rm}-\bm{r}_{\rm h}|$ is the comoving
+separation entering $\ximm$. The measure maps exactly as well:
+\begin{equation}
+dz\,\frac{dV}{dz\,d\Omega}\;2\pi\sin\theta\,d\theta
+= 2\pi\Big(1+\tfrac{\pi}{\chi_o}\Big)\,d\pi\;s\,ds
+\label{eq:measure}
+\end{equation}
+(the $2\pi$ prefactors are the number; the line-of-sight variable
+$\pi$ always carries a differential or an argument). In these
+variables the geometry is transparent. The aperture support
+$f_A=0$ beyond $\theta_\lambda+\thob\le2\thob$ becomes the
+cylinder $s\le2\Rex$; the halo-exclusion condition
+($\ximm\equiv0$ for separations below $\Rex$,
+\S\ref{sec:question}) becomes the clean spherical statement
+$r>\Rex$ --- a hard \emph{lower limit} of the radial integral,
+not a discontinuity inside the domain. The twin peaks of the
+original $z$-integrand were never physical structure: they are
+the shadow of this excluded ball sliced along $z$, and they never
+form in $(\pi,s)$.
+
+\subsection{Reduced operators}
+\label{sec:operators}
+
+At each $(\lob,\zob)$ the algorithm evaluates the random channel
+and the clustered channel, the latter split into two
+line-of-sight zones:
+\begin{equation}
+\Dprnd = \pi\,\thob^2 \int\!dz\;\frac{dV}{dz\,d\Omega}\;
+w(z,\zob)\;\Dl(z),
+\qquad
+\tDpss = \tDp^{\rm ss,excl}_{\rm lss} + \tDp^{\rm ss,cyl}_{\rm lss}.
+\label{eq:alg_split}
+\end{equation}
+The \emph{exclusion zone}, $|\pi|\le\pis\equiv20\,\Rex$, is the
+cluster's own neighbourhood: it contains the halo-exclusion
+sphere $r<\Rex$ and the target aperture, and every calculation
+there must track the boundary $r=\Rex$. The
+\emph{free-of-exclusion zone} is the rest of the photo-$z$
+cylinder, out to the edges of the window: beyond $\pis$,
+$r\ge|\pi|>\pis=20\Rex\gg\Rex$ automatically, so the exclusion
+condition is satisfied by every point and never has to be
+imposed --- there is no boundary left to track. Both zones stay
+inside the transverse cylinder $s\le2\Rex$; only the exclusion
+\emph{sphere} is absent from the second. Throughout we write the
+small-scale (ss) operator; the large-scale one is the same
+expression with $\Ilamss\to \Ilamls$.
+
+The split point balances two competing requirements. The
+exclusion zone must stay narrow enough in redshift that the
+astrophysical weights can be frozen at $\zob$
+($\Delta z\lesssim10^{-2}$, \S\ref{sec:freeze}); the
+free-of-exclusion zone must start far enough out that
+$s\ll|\pi|$ and the transverse expansion of
+eq.~\eqref{eq:taylor} converges. At $\pis=20\Rex$ both are
+simultaneously controlled: the largest ratio in the
+free-of-exclusion zone is $(2\Rex/\pis)^2 = 10^{-2}$, the
+$\Bss$ term of eq.~\eqref{eq:cyl} retains the first
+correction at exactly this order, and the next omitted
+contribution is $(2\Rex/\pis)^4\lesssim10^{-4}$. At the
+reference $\Rex\simeq1.1\,\hMpc$ the geometry is
+$s_{\max}\simeq2.2\,\hMpc$, $\pis\simeq22\,\hMpc$,
+$\rmax=\sqrt{22^2+2.2^2}\simeq22.1\,\hMpc$: the exclusion
+zone is a short central segment of a much longer photo-$z$
+cylinder ($\sigma_\chi\simeq205\,\hMpc$ per side).
+
+The building block of both regimes is the frozen mass-integral
+moment (Fig.~\ref{fig:profiles}),
+\begin{equation}
+\boxed{\;
+\Ilam(x) = \int\!dM\, n(M,\zob)\,b(M,\zob)
+\int_0^{\lob}\!d\lambda\, P(\lambda\mid M,\zob)\,\lambda\,
+f_A(x,x_\lambda),
+\;}
+\quad
+x = \tfrac{s}{\Rex},
+\;\;
+x_\lambda = \big(\tfrac{\lambda}{\lob}\big)^{0.2}\!,
+\label{eq:Ilam}
+\end{equation}
+with the channel versions carrying the sigmoid weight,
+\begin{equation}
+\Ilamss(x) = [1-\sigma(x)]\,\Ilam(x),
+\qquad
+\Ilamls(x) = \sigma(x)\,\Ilam(x).
+\label{eq:Ilam_ssls}
+\end{equation}
+Two contamination densities accompany it: the unweighted one that
+drives the random channel, and its bias-weighted counterpart that
+sets the amplitude in regime B,
+\begin{align}
+\Dl(z) &= \int\!dM\,n(M,z)\!\int_0^{\lob}\!d\lambda\,
+P(\lambda\mid M,z)\,\lambda,
+\notag\\
+\Dlb(z) &= \int\!dM\,n(M,z)\,b(M,z)\!\int_0^{\lob}\!d\lambda\,
+P(\lambda\mid M,z)\,\lambda.
+\label{eq:densities}
+\end{align}
+These are not new objects. Eligibility makes every donor disk
+smaller than the target aperture ($x_\lambda\le1$), so
+$f_A(0,x_\lambda)=1$: at zero transverse offset the mass-integral
+moment captures every donated galaxy, and
+\begin{equation}
+\Ilam(0) = \Dlb(\zob)
+\label{eq:Ilam_zero}
+\end{equation}
+--- the densities are the $\theta=0$, $z=\zob$ limits of the
+frozen profiles ($\Dl(\zob)$ likewise from the unweighted
+analogue of eq.~\ref{eq:Ilam}).
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{figs/pedag_frozen_kernels.png}
+\caption{\emph{Left:} the frozen mass-integral moment at
+$(\lob,\zob)=(20,0.5)$: $\Ilam(x)$ (red, normalised to
+$x=0$), its large-scale part $\Ilamls=\sigma
+\Ilam$ (blue), and the sigmoid $\sigma(x)$ (dashed);
+$\Ilamss$ is the difference of the two curves.
+Support ends at $x=1+x_{\lambda,\max}\le2$. \emph{Right:} the
+capture fraction $f_A(x,x_\lambda)$ of \S\ref{sec:question} for
+several donor sizes; $\Ilam$ is their bias- and
+richness-weighted average.}
+\label{fig:profiles}
+\end{figure}
+
+\paragraph{Exclusion zone.} The halo-exclusion sphere is
+spherical in $(\pi,s)$, so integrate on the sphere: with
+$\mu=\pi/r$,
+\begin{equation}
+\boxed{\;
+\tDp^{\rm ss,excl}_{\rm lss}
+= 2\pi \int_{\Rex}^{\rmax}\! dr\; r^2\,\ximm(r)\;
+\Gss(r),
+\qquad
+\Gss(r) = 2\!\int_{\mulo(r)}^{\muhi(r)}\! d\mu\;
+\Ilamss\Big(\tfrac{r}{\Rex}\sqrt{1-\mu^2}\Big)\,
+\barw(r\mu),
+\;}
+\label{eq:excl}
+\end{equation}
+where $\barw$ is the two-sided average of the photo-$z$ window
+and the $\mu$-limits trace the domain boundaries: the cylinder
+wall gives $\mulo(r)=\sqrt{\max(0,\,1-(2\Rex/r)^2)}$, the
+zone split gives $\muhi(r)=\min(1,\,\pis/r)$, and the
+radial integral ends at $\rmax=\sqrt{\pis^2+4\Rex^2}$, the
+corner of the domain. The integrand is smooth
+(Fig.~\ref{fig:radial_new}): the exclusion is the hard lower
+limit $r=\Rex$, and the only non-analytic point is a derivative
+kink at $r=2\Rex$ where the cylinder wall engages --- split the
+grid there and log-spaced Gauss--Legendre nodes converge
+everywhere.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{figs/pedag_frozen_radial.png}
+\caption{Exclusion-zone radial integrand
+$r^2\,\ximm(r)\,G(r)$ of eq.~\eqref{eq:excl} at
+$(\lob,\zob)=(20,0.5)$, for the total (ss+ls) and large-scale
+mass integrals. Exclusion radius = hard lower limit (dotted);
+derivative kink at $r=2\Rex$ (dashed). The twin peaks and ring
+plateau of the original $z$-integrand are absent.}
+\label{fig:radial_new}
+\end{figure}
+
+\paragraph{Free-of-exclusion zone.} Beyond $\pis$ the geometry
+is Limber-like: the cylinder is \emph{thin}. Its radius,
+$2\Rex\simeq2\,\hMpc$, is small against every scale that varies
+along the line of sight ($|\pi|\ge\pis\simeq22\,\hMpc$, photo-$z$
+window $\sigma_\chi\simeq205\,\hMpc$), so expand the separation
+about the cylinder axis,
+\begin{equation}
+r = |\pi|\sqrt{1+s^2/\pi^2}
+= |\pi| + \frac{s^2}{2|\pi|} + O\!\big(s^4/|\pi|^3\big),
+\qquad
+\ximm(r) = \ximm(|\pi|)
++ \frac{s^2}{2|\pi|}\,\ximm'(|\pi|)
++ O\!\Big[\big(\tfrac{2\Rex}{\pi}\big)^{4}\Big].
+\label{eq:taylor}
+\end{equation}
+This is the Limber step: the correlation across the thin
+cross-section is replaced by its value and slope on the axis.
+With the exclusion sphere gone (no $r=\Rex$ boundary to track
+here), the $s$-integral of eq.~\eqref{eq:step2} acts directly on
+this expansion and reduces to two fixed moments of the mass
+integral,
+\begin{align}
+\int_0^{2\Rex}\! s\,ds\; \Ilamss(x)\,\ximm(r)
+&= \Ass\,\ximm(|\pi|)
++ \frac{\Bss}{2|\pi|}\,\ximm'(|\pi|)
++ O\!\Big[\big(\tfrac{2\Rex}{\pi}\big)^{4}\Big],
+\notag\\
+\Ass = \Rex^2\!\int_0^2\! x\,\Ilamss(x)\,dx,
+&\qquad
+\Bss = \Rex^4\!\int_0^2\! x^3\,\Ilamss(x)\,dx.
+\label{eq:moments}
+\end{align}
+Two $z$-dependences remain to be restored before this can be
+integrated down the line of sight. Geometric: the aperture is
+fixed in \emph{angle}, so the transverse variable dilates,
+$x=(s/\Rex)\sqrt{\chi_o/\chi}$, and each moment above picks up a
+power of $\chi/\chi_o$ per two powers of $s$ --- combined with
+the $(1+\pi/\chi_o)$ of the measure eq.~\eqref{eq:measure}, this
+is the squared distance ratio below. Astrophysical: the weights
+are no longer frozen, but their \emph{shape} drifts far more
+slowly than their \emph{amplitude}, so keep the amplitude exactly
+and freeze only the shape,
+\begin{equation}
+\Ilam(x;z) \;\simeq\;
+\frac{\Dlb(z)}{\Dlb(\zob)}\; \Ilam(x;\zob),
+\label{eq:amp_drift}
+\end{equation}
+anchored by eq.~\eqref{eq:Ilam_zero}
+($\Ilam(0;z)=\Dlb(z)$ exactly). Writing the background side
+($z>\zob$, at $z_+ = z(\chi_o+\pi)$) and the foreground side
+($z<\zob$, at $z_- = z(\chi_o-\pi)$) explicitly:
+\begin{align}
+\tDp^{\rm ss,cyl}_{\rm lss}
+=\;& 2\pi\int_{\pis}^{\chi(z_{\rm hi})-\chi_o}\! d\pi\;
+\Big(1+\tfrac{\pi}{\chi_o}\Big)^{\!2}\,
+w(z_+,\zob)\;
+\frac{\Dlb(z_+)}{\Dlb(\zob)}
+\left[ \Ass\,\ximm(\pi)
++ \frac{\Bss}{2\pi}\,\ximm'(\pi)\right]
+\notag\\
++\;& 2\pi\int_{\pis}^{\chi_o-\chi(z_{\rm lo})}\! d\pi\;
+\Big(1-\tfrac{\pi}{\chi_o}\Big)^{\!2}\,
+w(z_-,\zob)\;
+\frac{\Dlb(z_-)}{\Dlb(\zob)}
+\left[ \Ass\,\ximm(\pi)
++ \frac{\Bss}{2\pi}\,\ximm'(\pi)\right],
+\label{eq:cyl}
+\end{align}
+where $z_{\rm lo}$ and $z_{\rm hi}$ are the edges of the
+photo-$z$ window (where $w$ vanishes). The zone split at
+$\pis=20\Rex$ makes the expansion parameter of
+eq.~\eqref{eq:taylor} equal to $(2\Rex/\pis)^2=10^{-2}$ at the
+split, decreasing outward; with the first moment correction
+retained, the residual is $O(10^{-4})$. (The channel sum of the
+leading moments is closed analytically by the total-donation
+identity, $\Ass+\Als=\Rex^2\,\Dlb(\zob)/2$ --- a
+free consistency check on the numerics.) The free-of-exclusion
+zone cannot be truncated early (Fig.~\ref{fig:farzone_new}): the
+BAO feature sits well inside the photo-$z$ window.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{figs/pedag_frozen_farzone.png}
+\caption{Free-of-exclusion-zone line-of-sight integrand of
+eq.~\eqref{eq:cyl} (background side, log-$\pi$ measure). The BAO
+feature (dotted) lies inside the photo-$z$ window (dashed): the
+far tail carries real weight, hence both integrals run to the
+edges of the window.}
+\label{fig:farzone_new}
+\end{figure}
+
+\paragraph{Derivation.} Combining
+eqs.~\eqref{eq:Dlam_lss} and \eqref{eq:Dprj_ss}:
+\begin{align}
+\tDpss
+= 2\pi\!\int_0^\pi\! d\theta\sin\theta\; [1-\sigma(\theta)]
+\int\!dz\,\frac{dV}{dz\,d\Omega}\,&w(z,\zob)
+\int\!dM\,n(M,z)\, b(M,z)\,\ximm(r)
+\notag\\[-2pt]
+&\times
+\int_0^{\lob}\!d\lambda\,P(\lambda\mid M,z)\,\lambda\, f_A.
+\label{eq:step1}
+\end{align}
+The sky variables
+eqs.~\eqref{eq:sky_vars}--\eqref{eq:measure} are exact and give
+\begin{equation}
+\tDpss
+= 2\pi\!\int\! d\pi\,\Big(1+\tfrac{\pi}{\chi_o}\Big)\,
+w\big(z(\pi),\zob\big)
+\int_0^{2\Rex}\! s\,ds\; [1-\sigma]\,
+\ximm\big(\sqrt{\pi^2+s^2}\big)
+\int\!dM\,n\,b
+\int_0^{\lob}\!d\lambda\,P\,\lambda\, f_A.
+\label{eq:step2}
+\end{equation}
+
+\emph{Freeze.} For $|\pi|\le\pis$ the slow weights are
+evaluated at $\zob$ (\S\ref{sec:freeze}). $\ximm$ carries no
+$M$-dependence, so it passes through the mass integral and the
+$(M,\lambda)$ block of eq.~\eqref{eq:step2} contracts, with the
+sigmoid universal in $x$:
+\begin{equation}
+[1-\sigma(\theta)]
+\int\!dM\,n\,b
+\int_0^{\lob}\!d\lambda\,P\,\lambda\, f_A
+\;\;\xrightarrow{\;z\,\to\,\zob\;}\;\;
+[1-\sigma(x)]\, \Ilam(x) \;=\; \Ilamss(x).
+\label{eq:contract}
+\end{equation}
+
+\emph{Exclusion zone.} The frozen integrand depends on $(\pi,s)$
+only through $r=\sqrt{\pi^2+s^2}$ and $x=s/\Rex$, i.e.\ through
+$r$ and the direction cosine $\mu=\pi/r$. The spherical map
+$d\pi\,s\,ds = r^2\,dr\,d\mu$ turns the domain
+$\{r>\Rex,\;s\le2\Rex,\;|\pi|\le\pis\}$ into the limits
+$\mulo(r)$, $\muhi(r)$, $\rmax$ of
+eq.~\eqref{eq:excl}; the factor $(1+\pi/\chi_o)$ is odd about
+the cluster and averages to one by parity, and the two
+line-of-sight signs fold into $\barw$. This is
+eq.~\eqref{eq:excl}.
+
+\emph{Free-of-exclusion zone.} Here $s\le2\Rex\ll|\pi|$: Taylor-
+expanding $r$ and $\ximm(r)$ about the cylinder axis
+(eq.~\ref{eq:taylor}, the Limber step) turns the $s$-integral of
+eq.~\eqref{eq:step2} into the fixed moments $\Ass$,
+$\Bss$; restoring the geometric dilation of $x$ and the
+amplitude-drift ansatz eq.~\eqref{eq:amp_drift} for the
+astrophysical weights gives eq.~\eqref{eq:cyl}. See
+\S\ref{sec:operators} for the expansion, the two $z$-restorations,
+and the error budget in full.
+
+\emph{Random channel.} No $\ximm$, no exclusion: $f_A$
+integrates out over the sky (total-donation identity) and the
+first member of eq.~\eqref{eq:alg_split} follows directly from
+eqs.~\eqref{eq:Dlam_rnd} and \eqref{eq:Dprj_rnd}.
+
+Validated against \texttt{scipy.quad} on
+eq.~\eqref{eq:step1}: $0.006$--$0.04\%$ on the assembled
+operators, $\le0.07\%$ of the profile scale on the end-to-end
+$\brm(\theta)$ --- ss and ls share one pipeline, so their errors
+are correlated and largely cancel in the $\brmss$ closure of
+eq.~\eqref{eq:bss}. Both far below the $0.1\%$ pipeline
+tolerance.
+
+
+% ==================================================================
+% EVERYTHING BELOW: previous draft, commented out during the
+% section-by-section re-write. Re-enable pieces as they are revised.
+% ==================================================================
+\iffalse
+\section{OLD DRAFT: The physical question}
+\label{sec:question_old}
+
+\textsc{redMaPPer} estimates a cluster's richness by counting
+member galaxies inside a disk of angular radius $\theta_\lambda$
+and a photo-$z$ window around the cluster. Any galaxy that
+satisfies both cuts is counted, whether or not it belongs to the
+cluster. The observed richness therefore splits as
+\begin{equation}
+\lob \;=\; \ltr \;+\; \dprj(\lob,\ltr,\zob),
+\end{equation}
+with $\dprj$ the number of \emph{projected} galaxies: members of
+other halos in the target's photo-$z$ cylinder whose sky positions
+fall inside the target's aperture. Following Costanzi 2026
+(\texttt{papers/Costanzi2026.tex}, \S``Projection kernel'',
+Fig.~1), the $i$-th projected halo donates
+\begin{equation}
+\boxed{\;
+\rhoprj_i \;=\; \lambda_i\,w(z_i,\zob)\,f_{A,i}
+\;}
+\label{eq:rho_prj_i}
+\end{equation}
+galaxies: its own richness $\lambda_i$, times the probability
+$w(z_i,\zob)$ that a galaxy at redshift $z_i$ passes the target's
+photo-$z$ cut (the parabolic photo-$z$ kernel --- it controls how
+far down the line of sight donors matter, and is \emph{never}
+approximated in this note), times the fraction $f_{A,i}$ of its
+galaxies that land inside the target's aperture (the geometric
+capture fraction derived in \S\ref{sec:fA}).
+
+\paragraph{Eligibility: the percolation cut is physics, not
+notation.} Not every halo can donate. \textsc{redMaPPer} builds
+its catalogue by processing halos in \emph{decreasing richness
+order} and letting richer systems claim member galaxies first. A
+projected structure can only push galaxies into the target's
+aperture if it has not already been used up by something richer
+--- i.e.\ if its own true richness satisfies $\lambda<\lob$. A
+halo with $\lambda\ge\lob$ cannot contaminate a lower-ranked
+target: it would already have claimed those galaxies for itself
+(or a still-richer neighbour would have). Percolation also
+removes donors from the target's immediate 3-D neighbourhood ---
+halo exclusion, implemented as $\ximm\equiv0$ for 3-D separations
+below $\Rex=R_\lambda(\lob)(1+\zob)$, with
+$R_\lambda(\lambda)=(\lambda/100)^{0.2}\,\hMpc$. Throughout this
+note, every $\lambda$-integral carries the upper limit $\lob$;
+that limit \emph{is} the eligibility rule.
+
+\paragraph{Everything is a two-tracer correlation.} The eligible
+galaxies arrive through two physically distinct channels, and the
+clean way to see both is to remember that \emph{the target
+cluster is itself a biased tracer} of the matter field, with bias
+$\btar(\lob,\zob)$, exactly as every donor halo is a biased
+tracer with bias $b(M,z)$. A correlation between two tracers
+always carries both biases,
+\begin{equation}
+\xi_{\rm target,donor}(r) \;=\; \btar\; b(M,z)\;\ximm(r),
+\label{eq:two_tracer}
+\end{equation}
+with $\ximm$ the nonlinear \emph{matter--matter} correlation
+(halofit). It is convenient to name the donor's half of this
+product --- the standard halo-model object
+\begin{equation}
+\xihm(r\,;M,z) \;\equiv\; b(M,z)\,\ximm(r),
+\label{eq:xihm}
+\end{equation}
+the donor's halo--matter cross-correlation. The two channels are
+then:
+\begin{itemize}
+\item \textbf{Poisson channel}: donors placed at random along the
+      cylinder, uncorrelated with the target --- the $b=0$ limit
+      of eq.~\eqref{eq:two_tracer}. Their count is a plain volume
+      integral, weight $1$.
+\item \textbf{Large-scale-structure (LSS) channel} (``cylinder
+      galaxies''): donors clustered around the target. Their
+      \emph{excess} count over Poisson is weighted by the full
+      two-tracer correlation
+      $\btar\,\xihm(r;M,z)$.
+\end{itemize}
+
+\paragraph{The master count.} Both channels are instances of one
+object, a weighted sum over the contamination halos --- everything
+in this note is a sum or a weighted average, nothing more:
+\begin{align}
+\Pop[X](\lob,\zob)
+=\;&
+\int\!dz\,\frac{dV}{dz\,d\Omega}(z)\!
+\int\!dM\,n(M,z)\!
+\int_0^{\lob}\!d\lambda\,P(\lambda\mid M,z)\,\lambda\,w_z(z,\zob)
+\notag\\
+&\quad\cdot\;2\pi\!\int\!d\theta\,\sin\theta\;
+f_A\big(\theta,\thob,\theta_\lambda(\lambda,z)\big)\,
+X(M,z,\theta\mid\zob),
+\label{eq:Pop}
+\end{align}
+reading right-to-left: capture fraction $\times$ donated richness
+$\times$ MOR $\times$ halo abundance $\times$ photo-$z$ window,
+summed over the cylinder. The extra weight $X$ selects the
+channel:
+\begin{equation}
+\Nbar \equiv \Pop[1],
+\qquad
+\Klss \equiv \Pop[\xihm],
+\qquad
+\KlssInf \equiv \Pop[\xihm\,\sigma(\theta)].
+\label{eq:count_defs}
+\end{equation}
+$\Nbar$ is the \textbf{Poisson contamination}: the expected
+eligible-galaxy count if donors were unclustered. $\Klss$ is the
+\textbf{LSS contamination kernel}: the count weighted by
+each donor's own $\xihm$ --- deliberately \emph{one bias short}
+of a physical two-tracer term, because the target's bias is the
+unknown the pipeline solves for; $\btar\,\Klss$ completes the
+correlation. $\KlssInf$ is $\Klss$ weighted by the sigmoid
+$\sigma(\theta)=[1+e^{-k(\theta-\theta_0)}]^{-1}$ of the
+$\bsel(\theta)$ ansatz (fixed constants $k=2.5/\thob$,
+$\theta_0=\thob/2$, $\thob=\Rex/\chi_o$, $\chi_o=\chi(\zob)$);
+since $\sigma\to1$ at large $\theta$, $\KlssInf$ is the
+\emph{large-$\theta$ (LSS-asymptotic) piece} of $\Klss$ --- the
+part of the clustered count that is eventually multiplied by the
+large-scale plateau $\blarge$, while the complement
+$\Klss-\KlssInf$ carries the small-scale plateau $\bsmall$
+(\S\ref{sec:closure}). The $\theta$-integral runs over
+$(0,\,2\thob]$; \S\ref{sec:moments} shows this cut is exact, not
+a truncation.
+
+This is the same Poisson $+$ clustering split the main note
+already uses one level up, where the projected profile is
+$\Sigma = \Sigma^{\rm 1h} + \Sigma^{\rm prj}$ --- here it is
+denominated in galaxy counts instead of surface density.
+
+\paragraph{Dictionary.} The production document and the code
+predate this naming; the map is:
+\begin{center}
+\small
+\begin{tabular}{l l l}
+\toprule
+this note & production doc / code & meaning \\
+\midrule
+$\ximm$ & $\xi_{\rm NL}$ / \texttt{XiNL} & nonlinear matter--matter correlation \\
+$\xihm = b\,\ximm$ & $b\,\xi_{\rm NL}$ & donor halo--matter cross-correlation \\
+$\Nbar$ & $\Pop[1]$ / \texttt{P1} & Poisson (unclustered) contamination count \\
+$\Klss$ & $I_2$ / \texttt{I2} & LSS contamination kernel \\
+$\KlssInf$ & $I_1$ / \texttt{I1} & large-$\theta$ (LSS) piece of $\Klss$ \\
+$\btar$ & $b_{\rm halo}$ / \texttt{b\_eff} & target's own bias (mass-selected aggregate) \\
+$\Nlss = \btar\Klss$ & $b_{\rm eff}\,I_2$ & LSS-clustered contamination \\
+$\Nrnd = \Nbar+\Nlss$ & $\dprj_{\rm RND}$ & contamination of a random mass-matched target \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Scales.} Three scales control everything below (values
+at the reference point $\lob=20$, $\zob=0.5$):
+\begin{center}
+\small
+\begin{tabular}{l l l}
+\toprule
+scale & value & carrier \\
+\midrule
+exclusion & $\Rex \approx 1.1\,\hMpc$
+  \;($\delta z_{\rm excl}\approx 4.7\times10^{-4}$)
+  & $\ximm$ cutoff, aperture $f_A$, sigmoid $\sigma$ \\
+photo-$z$ window & $\sigma_z \approx 0.09$
+  \;($\sigma_\chi \approx 270\,\hMpc$) & $w_z$ \\
+weight evolution & $\Delta z \sim 0.1$--$1$
+  & $n$, $b$, $P(\lambda|M)$, $dV/dz\,d\Omega$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The ratio of the first to the third is $\sim 10^{-3}$: everything
+sharp is geometric, everything astrophysical is slow. The
+reformulation makes this separation explicit.
+
+\section{Counting the eligible galaxies}
+\label{sec:kernels}
+
+\subsection{The capture fraction \texorpdfstring{$f_A$}{fA}}
+\label{sec:fA}
+
+$f_A$ carries the entire $\theta$-shape of the donation. The
+model treats a donor of true richness $\lambda$ as $\lambda$
+member galaxies spread \emph{uniformly} over the donor's own
+richness disk, of angular radius
+$\theta_\lambda \equiv \theta_\lambda(\lambda,z)$. When the donor
+sits at centre separation $\theta$ from the target, the target's
+aperture (radius $\thob$) captures each of those galaxies with
+probability equal to the fractional overlap of the two disks ---
+so the expected captured count is $\lambda f_A$ with
+\begin{equation}
+\boxed{\;
+f_A(\theta,\thob,\theta_\lambda)
+= \frac{A_{\rm ov}(\theta,\thob,\theta_\lambda)}
+       {\pi\theta_\lambda^2},
+\;}
+\label{eq:fA_def}
+\end{equation}
+$A_{\rm ov}$ the area of the two disks' intersection at centre
+distance $\theta$, closed-form (the standard circle--circle lens):
+\begin{align}
+A_{\rm ov}(\theta,\thob,\theta_\lambda)
+=\;& \thob^2
+\arccos\!\Big(\frac{\theta^2+\thob^2
+                     -\theta_\lambda^2}{2\theta\,\thob}\Big)
++ \theta_\lambda^2
+\arccos\!\Big(\frac{\theta^2+\theta_\lambda^2
+                     -\thob^2}{2\theta\,\theta_\lambda}\Big)
+\notag\\
+&- \tfrac12\sqrt{\big[(\thob+\theta_\lambda)^2-\theta^2\big]
+                 \big[\theta^2-(\thob-\theta_\lambda)^2\big]}
+\label{eq:lens}
+\end{align}
+for $|\thob-\theta_\lambda|<\theta<\thob+\theta_\lambda$, with
+$A_{\rm ov}=\pi\min(\thob,\theta_\lambda)^2$ for
+$\theta\le|\thob-\theta_\lambda|$ and $0$ for
+$\theta\ge\thob+\theta_\lambda$.
+
+Two points the uniform-disk picture makes automatic:
+\begin{itemize}
+\item \textbf{Normalisation is by the donor's own area.} $f_A$
+      is the fraction \emph{of the donor's galaxies} landing in
+      the target aperture, hence the $\pi\theta_\lambda^2$
+      denominator and $f_A\in[0,1]$: $f_A=1$ when the donor disk
+      is swallowed whole ($\theta\le\thob-\theta_\lambda$,
+      reachable because eligibility $\lambda<\lob$ makes the
+      donor the smaller disk near $\zob$), and $f_A=0$ once the
+      disks separate ($\theta\ge\thob+\theta_\lambda$).
+      Normalising by the \emph{target} area $\pi\thob^2$ instead
+      would not be a capture fraction, and its zeroth moment
+      would retain the donor richness
+      (cf.\ \S\ref{sec:moments}) --- the $\lambda$--$\theta$
+      decoupling below would be lost.
+      \texttt{richness\_selection.geometry.area\_overlap}
+      implements eq.~\eqref{eq:fA_def} by always dividing by the
+      \emph{second} disk's area regardless of which disk is
+      larger; the appendix-A formula of Costanzi 2026 instead
+      normalises by $\pi\min(\thob,\theta_\lambda)^2$, so the two
+      disagree in the tail where a low-$z$ foreground donor's own
+      angular disk is larger than the target's
+      ($\theta_\lambda>\thob$, possible even for $\lambda<\lob$
+      since angular size grows as $z\to0$). This note follows the
+      code's convention throughout; flagging the mismatch rather
+      than silently picking one.
+\item \textbf{Homogeneity $\Rightarrow$ universality.}
+      $A_{\rm ov}$ is homogeneous of degree two in its three
+      angular arguments, so $f_A$ depends only on the ratio
+      $\theta_\lambda/\thob$. With
+      $x\equiv\theta/\thob = \rp/\Rex$ (\S\ref{sec:coords}) and
+      the donor-size ratio
+      $x_\lambda \equiv \theta_\lambda/\thob$
+      ($=(\lambda/\lob)^{0.2}\in(0,1]$ at frozen $\zob$), it is
+      one universal two-argument function $f_A(x,x_\lambda)$: a
+      plateau $f_A=1$ on $x\le 1-x_\lambda$, the lens formula in
+      between, and zero beyond $x=1+x_\lambda\le 2$
+      (Fig.~\ref{fig:kernels}, right). The sigmoid constants also
+      scale with $\thob$, so $\sigma(x)=[1+e^{-2.5(x-1/2)}]^{-1}$
+      is universal too: nothing in the angular sector depends on
+      $(\lob,\zob)$ individually.
+\end{itemize}
+
+\subsection{From the halo population to counting kernels}
+\label{sec:Nkernels}
+
+The counts of \S\ref{sec:question} run over halo mass and donor
+richness, but neither variable survives in the answer: what
+matters at each transverse offset $x$ is simply \emph{how many
+galaxies the contamination halos donate there}. Because the
+donor bias factorises out of the matter correlation
+(eq.~\ref{eq:xihm}: $\xihm = b(M,z)\,\ximm(r)$, with $b$ carrying
+all the $M$-dependence and $\ximm$ none), the $(M,\lambda)$
+sector contracts once per $(\lob,\zob)$ into the
+\textbf{eligible-galaxy counting kernels}
+\begin{equation}
+\boxed{\;
+\begin{aligned}
+\Ncal_{\rm rnd}(x) &\equiv \int\!dM\, n(M,\zob)
+\int_0^{\lob}\!d\lambda\, P(\lambda\mid M,\zob)\,\lambda\,
+f_A(x,x_\lambda),
+\\
+\Ncal_{\rm lss}(x) &\equiv \int\!dM\, n(M,\zob)\,b(M,\zob)
+\int_0^{\lob}\!d\lambda\, P(\lambda\mid M,\zob)\,\lambda\,
+f_A(x,x_\lambda),
+\end{aligned}
+\;}
+\label{eq:N_def}
+\end{equation}
+leaving $\ximm(r)$ outside as a pure function of separation.
+$\Ncal_{\rm rnd}(x)$ answers: \emph{per unit comoving volume of eligible
+halos placed at scaled transverse offset $x$, how many of their
+galaxies land inside the target aperture?} It is a
+galaxy-donation profile --- the direct, population-averaged
+version of Fig.~\ref{fig:kernels}: maximal at $x=0$ (donor disks
+fully overlapping the aperture), decaying to zero at $x=2$ where
+even the largest eligible donor loses contact. $\Ncal_{\rm lss}(x)$ is
+the same count with each donor weighted by its clustering
+strength $b(M,\zob)$ --- the version the LSS channel needs,
+because a donor only produces \emph{excess} galaxies insofar as
+it traces the target's density field. In this sense $\Ncal_{\rm lss}$ is
+the workhorse of the whole selection-bias calculation: one 1-D
+curve holding the entire population of contamination halos, its
+richness function, and its clustering weight.
+
+The LSS-asymptotic kernel needs no third contraction. The sigmoid
+carries no $M$ or $\lambda$ dependence, so the $\KlssInf$ kernel
+is \emph{exactly}
+\begin{equation}
+\sigma(x)\,\Ncal_{\rm lss}(x),
+\end{equation}
+zero extra $(M,\lambda)$ work. Figure~\ref{fig:kernels} shows
+both kernels at the reference point.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{figs/pedag_frozen_kernels.png}
+\caption{\emph{Left:} the eligible-galaxy counting kernels at
+$(\lob,\zob)=(20,0.5)$. $\Ncal_{\rm lss}(x)$ (red) is the bias-weighted
+donation profile of eq.~\eqref{eq:N_def}; $\sigma\Ncal_{\rm lss}$ (blue)
+follows for free; the sigmoid $\sigma(x)$ (dashed) is fully
+analytic. Support ends at $x = 1+x_{\lambda,\max}\le 2$ --- the
+$\theta_{\max}=2\thob$ cut of the original pipeline loses
+nothing. \emph{Right:} the universal capture fraction
+$f_A(x,x_\lambda)$ of \S\ref{sec:fA} for several donor sizes
+$x_\lambda=\theta_\lambda/\thob$: unit plateau for
+$x\le 1-x_\lambda$ (donor disk fully inside the target aperture),
+lens-formula falloff, zero beyond $x = 1+x_\lambda$. $\Ncal_{\rm lss}$ is
+the bias-and-richness-weighted average of these curves over
+$x_\lambda(\lambda)$.}
+\label{fig:kernels}
+\end{figure}
+
+\subsection{The total-donation theorem}
+\label{sec:moments}
+
+The uniform-disk picture yields the moments of $f_A$ without ever
+touching the lens formula. Let $D_{\rm ob}$, $D_\lambda$ be the
+target and donor disks (radii $\thob$, $\theta_\lambda$, areas
+$A_{\rm ob}=\pi\thob^2$, $A_\lambda=\pi\theta_\lambda^2$). Write
+the overlap area as a double indicator integral and use Fubini:
+\begin{equation}
+\int d^2\theta\; A_{\rm ov}(\theta)
+= \int d^2\theta \int d^2u\;
+\mathbf{1}_{\{u\in D_{\rm ob}\}}\,\mathbf{1}_{\{u-\theta\in D_\lambda\}}
+= A_{\rm ob}A_\lambda,
+\end{equation}
+i.e.\ summed over all possible centre offsets $\theta$, every
+point of the donor disk sweeps across every point of the target
+disk exactly once. For the second moment, note
+$\theta=\bm{u}-\bm{v}$ with $\bm{u}$ uniform on $D_{\rm ob}$ and
+$\bm{v}$ uniform on $D_\lambda$ (independent, concentric), so
+\begin{equation}
+\int d^2\theta\; \theta^2\, A_{\rm ov}(\theta)
+= A_{\rm ob}A_\lambda\,\avg{|\bm{u}-\bm{v}|^2}
+= A_{\rm ob}A_\lambda\big(\avg{u^2}+\avg{v^2}\big)
+= A_{\rm ob}A_\lambda\,\frac{\thob^2+\theta_\lambda^2}{2},
+\end{equation}
+using $\avg{u^2}=\thob^2/2$ for a uniform disk and the vanishing
+cross term. With the capture-fraction normalisation
+$f_A = A_{\rm ov}/(\pi\theta_\lambda^2)$ of eq.~\eqref{eq:fA_def}
+and $x=\theta/\thob$, $x_\lambda=\theta_\lambda/\thob$:
+\begin{equation}
+\boxed{\;
+\int_0^\infty 2x\,f_A(x,x_\lambda)\,dx = 1
+\quad\text{for every } x_\lambda,
+\qquad
+\int_0^\infty 2x^3 f_A(x,x_\lambda)\,dx = \frac{1+x_\lambda^2}{2}.
+\;}
+\label{eq:moments}
+\end{equation}
+The zeroth moment is the \textbf{total-donation theorem}:
+integrated over all sky positions, a donor gives
+$\lambda\times(\text{target area})$ galaxy--area regardless of how
+large its own disk is --- smearing the $\lambda$ galaxies over a
+wider disk redistributes \emph{where} in $\theta$ the
+contamination lands but cannot change its total. (Under the
+target-area normalisation this total would instead read
+$x_\lambda^2$, tying it to the donor size --- the sanity check
+promised in \S\ref{sec:fA}.) The donation total is therefore
+\emph{independent of the donor richness}: wherever the
+$\theta$-integral runs over the full $f_A$ support, the
+$\lambda$--$\theta$ coupling drops out entirely, leaving the
+scalar aggregates
+\begin{align}
+\nrnd(z) &= \int\!dM\,n(M,z)\!\int_0^{\lob}\!d\lambda\,P(\lambda\mid M,z)\,\lambda
+= \int_0^\infty\! 2x\,\Ncal_{\rm rnd}(x)\,dx\Big|_z,
+\notag\\
+\nlss(z) &= \int\!dM\,n(M,z)\,b(M,z)\!\int_0^{\lob}\!d\lambda\,P(\lambda\mid M,z)\,\lambda
+= \int_0^\infty\! 2x\,\Ncal_{\rm lss}(x)\,dx\Big|_z.
+\label{eq:blam}
+\end{align}
+The identity $\int 2x\,\Ncal_{\rm lss}\,dx = \nlss$ is verified
+numerically to $0.0000\%$ (it is exact; the check validates the
+implementation). The theorem also certifies the
+$\theta_{\max}=2\thob$ cut: the $f_A$ support ends at
+$x=1+x_\lambda\le2$, so the cut discards nothing. The same
+mechanism collapses the Poisson count $\Nbar$ completely
+(\S\ref{sec:P1}).
+
+\section{Sky-plane and line-of-sight coordinates: \texorpdfstring{$(\rp,\pi)$}{(s, pi)}}
+\label{sec:coords}
+
+The eligibility physics of \S\ref{sec:question} lives on 3-D
+separation: the exclusion ball ($r<\Rex$) and the clustering
+kernel $\ximm(r)$ are spherically symmetric, while the aperture
+$f_A$ is transverse and the photo-$z$ window $w_z$ is
+line-of-sight. The natural variables are therefore a
+line-of-sight separation
+\begin{equation}
+\pi \;\equiv\; \chi(z)-\chi_o
+\end{equation}
+and a sky-plane (transverse) separation $\rp$. The exact 3-D
+comoving separation obeys
+\begin{equation}
+r^2
+= \chi^2 + \chi_o^2 - 2\chi\chi_o\cos\theta
+= \pi^2 + 4\chi\chi_o\sin^2(\theta/2),
+\label{eq:exact_sep}
+\end{equation}
+so defining
+\begin{equation}
+\boxed{\;
+\rp \;\equiv\; 2\sqrt{\chi\chi_o}\,\sin(\theta/2)
+\quad\Longrightarrow\quad
+r^2 = \pi^2 + \rp^2 \;\;\text{(exact)},
+\;}
+\label{eq:rp_def}
+\end{equation}
+the sky measure and the volume element also map exactly:
+\begin{equation}
+2\pi_{\vphantom{o}}\sin\theta\,d\theta
+= \frac{2\pi_{\vphantom{o}}\,\rp\,d\rp}{\chi\chi_o},
+\qquad
+dz\,\frac{dV}{dz\,d\Omega} = \chi^2\,d\pi,
+\qquad
+\Longrightarrow\quad
+dz\,\frac{dV}{dz\,d\Omega}\;2\pi\sin\theta\,d\theta
+= 2\pi\Big(1+\tfrac{\pi}{\chi_o}\Big)\,d\pi\,\rp\,d\rp.
+\label{eq:measure}
+\end{equation}
+(Here and below the $2\pi$ prefactors are the number
+$\pi=3.14159\ldots$; the line-of-sight variable $\pi$ always
+appears with an argument or a differential.)
+Both identities in
+eqs.~\eqref{eq:rp_def}--\eqref{eq:measure} carry \emph{no} error
+term: the question of a ``higher-order $\cos\theta$ expansion''
+dissolves, because the exact transverse variable exists. (Had one
+used the naive $\rp\simeq\chi_o\theta$, the error would be
+$\theta^2/24 \lesssim (2\thob)^2/24 \sim 10^{-7}$ --- also
+irrelevant, but the exact variable is free.) The comoving-volume
+Jacobian $\chi^2$ cancels against the sky-measure $1/(\chi\chi_o)$
+up to the factor $(1+\pi/\chi_o)$, which is \emph{odd} in $\pi$
+and cancels at first order under the near-zone integral
+(\S\ref{sec:frozen}).
+
+In these variables the counting domain is transparent: the
+$\theta$-range maps to $\rp\in(0,2\Rex]$ (the $f_A$ support, in
+transverse units), so the clustered kernels $\Klss$, $\KlssInf$ run
+over an infinite \emph{cylinder} of radius $2\Rex$ along the line
+of sight --- the ``cylinder galaxies'' of \S\ref{sec:question}
+--- minus the excluded ball, which is now the clean spherical
+condition $r=\sqrt{\pi^2+\rp^2}>\Rex$. (In the original
+$(z,\theta)$ coordinates this same ball, sliced along $z$,
+produced twin sharp peaks bridged by a ring plateau in the
+$z$-integrand --- the numerical hazard the production ring+outer
+Gauss--Legendre split was built to tame. \S\ref{sec:near} shows
+the peaks never form in $(\rp,\pi)$.)
+
+\section{Frozen physics: what may be evaluated at \texorpdfstring{$\zob$}{zob}}
+\label{sec:frozen}
+
+Inside the exclusion-affected zone $|\pi|\lesssim \pi_s = 20\Rex
+\approx 22\,\hMpc$ ($\Delta z\lesssim 8\times 10^{-3}$), freeze
+at $\zob$: the halo mass function $n(M,z)$, the halo bias
+$b(M,z)$, the MOR $P(\lambda\mid M,z)$, the aperture angle
+$\theta_\lambda(\lambda,z)$, and the measure factor
+$(1+\pi/\chi_o)$. Two independent protections control the error:
+\begin{enumerate}
+\item \textbf{Scale separation}: each frozen weight drifts by
+      $\partial_z\ln(\cdot)\times\Delta z \lesssim 10^{-2}$ across
+      the zone.
+\item \textbf{Parity}: the drift is linear in $\pi$ at leading
+      order, while $\ximm(r)$ and the counting kernels are even in
+      $\pi$; first-order errors integrate to zero over the
+      symmetric zone, leaving only the quadratic term
+      $\sim(\Delta z\,\partial_z\ln)^2\lesssim 10^{-4}$.
+\end{enumerate}
+
+Direct validation (freeze inside the exclusion ring, exact
+elsewhere; error vs.\ \texttt{scipy.quad}, flat across ring node
+counts $N=7/15/25$ --- i.e.\ a property of the approximation, not
+of the quadrature):
+\begin{center}
+\small
+\begin{tabular}{r r r r}
+\toprule
+$\lob$ & $\zob$ & $\KlssInf$ err & $\Klss$ err \\
+\midrule
+$25.0$  & $0.275$ & $0.001\%$ & $0.002\%$ \\
+$52.5$  & $0.425$ & $0.001\%$ & $0.001\%$ \\
+$130.0$ & $0.575$ & $0.002\%$ & $0.003\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The photo-$z$ kernel $w_z$ is \emph{not} frozen anywhere: it
+enters every count below as an explicit factor at the
+line-of-sight level --- multiplying the counting kernels
+identically in $\Klss$ and $\KlssInf$ (they share one geometric
+pipeline) and appearing as a bare 1-D factor in $\Nbar$. The
+counting kernels themselves cannot carry $w_z$: they are
+contractions over $(M,\lambda)$ at the single redshift $\zob$,
+while $w_z$ depends on the donor redshift $z$ --- a different
+integration variable, one level further out.
+
+\section{The three counts}
+\label{sec:counts}
+
+\subsection{The Poisson count \texorpdfstring{$\Nbar$}{Nbar}: a 1-D integral}
+\label{sec:P1}
+
+The Poisson channel carries no $\ximm$ and no exclusion, so the
+total-donation theorem applies at every $z$ without any zone
+split: the $\theta$-integral of $f_A$ is exactly the target's
+aperture area, for every donor. The 4-D count collapses to
+\begin{equation}
+\boxed{\;
+\Nbar(\lob,\zob)
+= \pi\,\thob^2
+\int\!dz\;\frac{dV}{dz\,d\Omega}(z)\; w_z(z,\zob)\;
+\nrnd(z),
+\;}
+\label{eq:P1_1d}
+\end{equation}
+with $\nrnd(z)$ the mean eligible richness density of
+eq.~\eqref{eq:blam} --- one smooth single-peaked 1-D integral;
+the $\theta$ and $\lambda$ axes disappear analytically. Read it
+as a count: (aperture area) $\times$ (eligible galaxies per unit
+volume) $\times$ (photo-$z$ window), summed down the cylinder.
+(The production code currently applies the $\theta_{\rm excl}(z)$
+lower cut to $\Nbar$ as well; whether percolation physically
+excludes the Poisson-channel counts inside the exclusion ring is
+a modelling choice worth an explicit decision --- the difference
+is a ring-sliver correction of relative size
+$O(\delta z_{\rm excl}/\sigma_z)\sim 10^{-2}$ of the ring
+contribution, itself a small fraction of the total. The
+validation of \S\ref{sec:validation} applies the production
+convention, so the comparison is convention-for-convention.)
+
+\subsection{The clustered kernel \texorpdfstring{$\Klss$}{Klss}, near zone: integrate on the sphere}
+\label{sec:near}
+
+Within $|\pi|\le\pi_s$ the weights are frozen
+(\S\ref{sec:frozen}) and the integrand of the clustered kernel is
+(counting kernel at transverse offset) $\times$ (spherical
+clustering weight with a spherical hole). Everything is a
+function of the 3-D separation $r$ and the direction cosine
+$\mu = \pi/r$; with $r^2=\pi^2+\rp^2$ and
+$d\pi\,\rp\,d\rp = r^2\,dr\,d\mu$, the near zone
+$\{r>\Rex,\ \rp\le2\Rex,\ |\pi|\le\pi_s\}$ becomes
+\begin{equation}
+\boxed{\;
+K_X^{\rm near}
+= 2\pi \int_{\Rex}^{r_{\max}} dr\; r^2\,\ximm(r)\; G_X(r),
+\qquad
+G_X(r) = 2\!\int_{\mu_{\rm lo}(r)}^{\mu_{\rm hi}(r)}\! d\mu\;
+\Ncal_X\Big(\tfrac{r}{\Rex}\sqrt{1-\mu^2}\Big)\,\bar w_z(r\mu),
+\;}
+\label{eq:master_near}
+\end{equation}
+with $X\in\{b,\sigma\}$ ($\Ncal_\sigma \equiv \sigma\Ncal_{\rm lss}$ for
+$\KlssInf$), $\mu_{\rm lo}(r) = \sqrt{\max(0,\,1-(2\Rex/r)^2)}$
+(the cylinder wall), $\mu_{\rm hi}(r) = \min(1,\,\pi_s/r)$ (the
+near/far split), $r_{\max}=\sqrt{\pi_s^2+4\Rex^2}$, and
+$\bar w_z$ the two-sided average of the photo-$z$ kernel (unity
+to $O((\pi_s/\sigma_\chi)^2)$; kept exactly at negligible cost).
+
+Everything sharp has become smooth:
+\begin{itemize}
+\item the exclusion is the \emph{exact lower limit} $r=\Rex$, not
+      a discontinuity inside the domain;
+\item $\ximm(r)$ is a locally power-law decay, ideal for a
+      log-$r$ grid;
+\item $G_X(r)$ is smooth except for a derivative kink at
+      $r=2\Rex$ where the cylinder wall engages --- split the
+      $r$-interval there and both pieces are analytic.
+\end{itemize}
+Figure~\ref{fig:radial} shows the radial integrand: a featureless
+power-law decay. The twin exclusion peaks and ring plateau of the
+original $z$-integrand are absent --- they were never physical
+structure, only the shadow of the excluded ball sliced along $z$.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{figs/pedag_frozen_radial.png}
+\caption{The near-zone radial integrand
+$r^2\,\ximm(r)\,G_X(r)$ of eq.~\eqref{eq:master_near} at
+$(\lob,\zob)=(20,0.5)$. The exclusion radius is the hard lower
+limit (dotted); the only non-analytic point is the derivative
+kink at $r=2\Rex$ (dashed) where the cylinder wall $\rp\le2\Rex$
+engages. Compare with the twin-peak + plateau $z$-integrand of
+the original coordinates (\texttt{richness\_selection.tex},
+Fig.~\texttt{fz}): identical information, hostile presentation.}
+\label{fig:radial}
+\end{figure}
+
+\subsection{The clustered kernel, far zone: Limber factorisation with moment corrections}
+\label{sec:far}
+
+For $|\pi|>\pi_s \gg 2\Rex$ the separation is dominated by the
+line of sight, $r = |\pi|\sqrt{1+\rp^2/\pi^2}$, and $\ximm$
+Taylor-expands under the $\rp$-integral:
+\begin{equation}
+\ximm(r) \simeq \ximm(|\pi|) +
+\frac{\rp^2}{2|\pi|}\,\ximm'(|\pi|) + \dots
+\end{equation}
+The $\rp$-integrals are then precisely the closed-form moments of
+\S\ref{sec:moments}. Defining
+\begin{equation}
+A_X = \int_0^{2\Rex}\!\rp\, \Ncal_X\,d\rp
+    = \Rex^2\!\int_0^2\! x\, \Ncal_X\,dx,
+\qquad
+B_X = \int_0^{2\Rex}\!\rp^3\, \Ncal_X\,d\rp
+    = \Rex^4\!\int_0^2\! x^3 \Ncal_X\,dx,
+\end{equation}
+(for $\Klss$ both are closed by the total-donation theorem:
+$A_b = \Rex^2\,\nlss/2$ and
+$B_b = \Rex^4\,\avg{b\lambda(1+x_\lambda^2)}/4$; for $\KlssInf$
+the $\sigma$-weighted moments $A_\sigma$, $B_\sigma$ are one-time
+1-D integrals of the universal kernel), the far zone is the 1-D
+Limber-like integral
+\begin{equation}
+\boxed{\;
+K_X^{\rm far}
+= 2\pi\sum_{\pm}\int_{\pi_s}^{\pi_{\max}^{\pm}} d\pi\;
+\Big(1\pm\tfrac{\pi}{\chi_o}\Big)^{\!2}\, w_z\big(z(\pm\pi)\big)\,
+s_{\rm w}\big(z(\pm\pi)\big)
+\left[ A_X\,\ximm(\pi) + \frac{B_X}{2\pi}\,\ximm'(\pi)\right],
+\;}
+\label{eq:master_far}
+\end{equation}
+where $s_{\rm w}(z) = \nlss(z)/\nlss(\zob)$ is the (slow)
+amplitude drift of the frozen weights, evaluated on a coarse
+$z$-spline --- the far zone keeps the full $z$-dependence because
+it is 1-D and cheap. The $(\chi/\chi_o)^2$ factor carries
+\emph{two} powers of the distance ratio: one from the measure of
+eq.~\eqref{eq:measure}, and one from the aperture-moment dilation
+--- the kernel argument is $x = \theta/\thob =
+(\rp/\Rex)\sqrt{\chi_o/\chi}$, so the $\rp$-moments $A_X$, $B_X$
+computed at frozen scale pick up $\chi/\chi_o$ per two powers of
+$\rp$. In the near zone both powers are $1+O(\pi/\chi_o)$ with
+odd-parity cancellation; in the far wings ($|\pi|$ up to
+$\sigma_\chi$, $\chi/\chi_o$ up to $\pm10\%$) the squared factor
+is required --- with a single power the $\Nbar$ wings, which
+carry full weight with no $\ximm$ suppression, err at the
+$0.5\%$ level; with the square they return to $\lesssim0.015\%$.
+The expansion parameter is $(2\Rex/\pi_s)^2 = 10^{-2}$ at
+$\pi_s = 20\Rex$; with the first correction retained the residual
+is $O((2\Rex/\pi_s)^4)\sim 10^{-4}$.
+
+Figure~\ref{fig:farzone} shows the far-zone integrand: the BAO
+bump at $\approx 105\,\hMpc$ sits well inside the photo-$z$
+window ($\sigma_\chi\approx 270\,\hMpc$), which is why the far
+zone cannot be truncated early --- distant correlated structure
+still donates eligible galaxies as long as $w_z$ lets them pass
+the photo-$z$ cut.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{figs/pedag_frozen_farzone.png}
+\caption{Far-zone line-of-sight integrand (background side,
+log-$\pi$ measure) at $(\lob,\zob)=(20,0.5)$, normalised to its
+value at $\pi_s=20\Rex$. The BAO feature at $\approx 105\,\hMpc$
+(dotted) lies inside the parabolic photo-$z$ window (dashed): the
+far tail carries real weight and the full $w_z(z)\,\nlss(z)$
+dependence is retained --- trivially, since the integral is 1-D.}
+\label{fig:farzone}
+\end{figure}
+
+\subsection{The LSS-asymptotic kernel \texorpdfstring{$\KlssInf$}{Khm-inf}, for free}
+\label{sec:I1}
+
+$\KlssInf$ is the clustered kernel weighted toward large $\theta$
+--- the part of the cylinder-galaxy excess that lands where the
+sigmoid has saturated ($\sigma\to1$) and the bias has settled
+onto its large-scale plateau. It needs no new derivation:
+substitute $\Ncal_\sigma=\sigma\Ncal_{\rm lss}$ for $\Ncal_{\rm lss}$ in
+eqs.~\eqref{eq:master_near} and \eqref{eq:master_far} ($A_b,B_b
+\to A_\sigma,B_\sigma$) and every other factor --- $\ximm$,
+$\bar w_z$, $w_z$, $s_{\rm w}(z)$, the geometry --- is shared,
+unchanged. Assembled:
+\begin{equation}
+\boxed{\;
+\Klss = K_b^{\rm near}+K_b^{\rm far},
+\qquad
+\KlssInf = K_\sigma^{\rm near}+K_\sigma^{\rm far}.
+\;}
+\label{eq:K_assembled}
+\end{equation}
+The entire cost of $\KlssInf$ beyond $\Klss$ is the cheap
+$\sigma$-weighted moments and one more $(r,\mu)$/$\pi$ pass
+reusing the same $\ximm$, $\bar w_z$, $w_z$ evaluations. Because
+the two kernels share one pipeline, whatever approximation error
+enters $\Klss$ enters $\KlssInf$ nearly identically --- the
+correlated errors that keep the $\Klss-\KlssInf$ denominator of
+\S\ref{sec:closure} well-conditioned
+(\S\ref{sec:bsel_validation}).
+
+\section{From counts to the selection bias}
+\label{sec:closure}
+
+The counts close the selection bias by budget balance: the
+observed inflation must equal Poisson count plus LSS count, where
+the LSS galaxies are counted with the \emph{target's} own bias
+--- completing the two-tracer correlation of
+eq.~\eqref{eq:two_tracer}. For a richness-selected target that
+bias is the unknown $\bsel(\theta)$, split by the sigmoid ansatz
+into two plateaus,
+$\bsel(\theta) = \bsmall[1-\sigma(\theta)]+\blarge\sigma(\theta)$:
+\begin{equation}
+\lob-\ltr
+\;=\; \underbrace{\Nbar}_{\text{Poisson}}
+\;+\; \underbrace{\blarge\,\KlssInf + \bsmall\,(\Klss-\KlssInf)}_{\text{LSS,
+counted with the target's bias}}.
+\label{eq:budget}
+\end{equation}
+Nothing in this section is new to the reformulation --- it is the
+production algebra of \texttt{richness\_selection.tex},
+\S``Bias pipeline'', reproduced so this note is self-contained;
+the only change is that the counts on the right are now the
+reformulated quantities of \S\ref{sec:counts}.
+
+The remaining inputs are exact and shared with production. The
+target's own bias for a \emph{mass-selected} (randomly-selected)
+sample at the same $(\lob,\zob)$ --- a 1-D $\ln M$ integral at
+fixed $\zob$, nothing to freeze ---
+\begin{equation}
+\btar(\lob,\zob)
+= \frac{\int d\ln M\;M\,n(M,\zob)\,b(M,\zob)\,P(\lob\mid M,\zob)}
+       {\int d\ln M\;M\,n(M,\zob)\,P(\lob\mid M,\zob)}
+\label{eq:btar}
+\end{equation}
+anchors the random-aperture expectation: substituting
+$\bsel\to\btar$ (a constant, which pulls out of the mass
+integral) in eq.~\eqref{eq:budget} gives the contamination a
+random mass-matched target would suffer,
+\begin{equation}
+\Nrnd(\lob,\zob) \;=\; \Nbar \;+\; \Nlss,
+\qquad
+\Nlss \;\equiv\; \btar\,\Klss
+\label{eq:Nrnd}
+\end{equation}
+--- Poisson plus LSS-clustered contamination, the same
+Poisson$+$clustering split as
+$\Sigma=\Sigma^{\rm 1h}+\Sigma^{\rm prj}$ one level up,
+denominated in galaxy counts (production:
+eq.~\texttt{dprj\_rnd}). The large-scale plateau follows from
+the Buzzard-calibrated empirical relation (production:
+eq.~\texttt{b\_infty}):
+\begin{equation}
+\blarge(\lob,\ltr,\zob) = \btar(\lob,\zob)
+  \big[1+0.13\,\delta^{\rm prj}\big],
+\qquad
+\delta^{\rm prj}=\frac{\lob-\ltr}{\Nrnd}-1,
+\label{eq:blarge_frozen}
+\end{equation}
+with $\delta^{\rm prj}$ the fractional excess contamination of
+the actual $(\lob,\ltr)$ pair over the random expectation. The
+small-$\theta$ plateau then closes the budget,
+eq.~\eqref{eq:budget}, as the remaining linear unknown
+(production: eq.~\texttt{b\_small}):
+\begin{equation}
+\boxed{\;
+\bsmall(\lob,\ltr,\zob) =
+\frac{(\lob-\ltr)-\Nbar-\blarge\,\KlssInf}{\Klss - \KlssInf}.
+\;}
+\label{eq:bsmall_frozen}
+\end{equation}
+This numerator near-cancels at small $\dprj=\lob-\ltr$
+(\S\ref{sec:bsel_validation}) --- the demanding test of any
+approximation to the counts. With $\bsmall$, $\blarge$ in hand,
+the sigmoid ansatz returns $\bsel(\lob,\ltr,\zob,\theta)$;
+$\ltr$-marginalisation
+(\texttt{richness\_selection.tex}, eq.~\texttt{b\_marg\_lt}) is
+unaffected by anything in this note.
+
+\section{Validation}
+\label{sec:validation}
+
+\subsection{The three counts against \texorpdfstring{\texttt{scipy.quad}}{scipy.quad}}
+\label{sec:quad_validation}
+
+The complete reformulated computation of $(\KlssInf, \Klss)$ at one
+$(\lob,\zob)$:
+\begin{enumerate}
+\item contract the eligible $(M,\lambda)$ population into
+      $\Ncal_{\rm lss}(x)$ (eq.~\ref{eq:N_def}); set
+      $\Ncal_\sigma = \sigma\Ncal_{\rm lss}$;
+\item near zone by eq.~\eqref{eq:master_near}: log-GL in $r$ on
+      $[\Rex,2\Rex]\cup[2\Rex,r_{\max}]$, GL in $\mu$;
+\item far zone by eq.~\eqref{eq:master_far}: log-GL in $\pi$ per
+      side, moments $A_X$, $B_X$ precomputed, $\nlss(z)$ drift on
+      a coarse spline;
+\item $K_X = K_X^{\rm near} + K_X^{\rm far}$; $\Nbar$ by
+      eq.~\eqref{eq:P1_1d}.
+\end{enumerate}
+Validation against \texttt{scipy.integrate.quad} on the original
+$(z,\theta,M,\lambda)$ formulation (adaptive in $z$ at
+$\epsilon_{\rm rel}=10^{-6}$, matched inner grids), for both the
+production grid code (\texttt{SelBias.bias\_precompute}, current
+repository defaults $N_{z,\rm bias}=48$, $N_\theta=10$) and the
+frozen reformulation:
+\begin{center}
+\small
+\begin{tabular}{r r l r r r}
+\toprule
+$\lob$ & $\zob$ & source & $\Nbar$ err & $\KlssInf$ err & $\Klss$ err \\
+\midrule
+$20.0$ & $0.500$ & production & $0.018\%$ & $0.004\%$ & $0.002\%$ \\
+       &         & frozen     & $0.006\%$ & $0.037\%$ & $0.037\%$ \\
+$52.5$ & $0.425$ & production & $0.007\%$ & $0.020\%$ & $0.021\%$ \\
+       &         & frozen     & $0.015\%$ & $0.030\%$ & $0.019\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Both are comfortably below the $0.1\%$ pipeline tolerance; the
+frozen path replaces the entire $(z,M,\lambda,\theta)$ 4-D
+quadrature by one $(M,\lambda)$ contraction, one smooth 2-D
+$(r,\mu)$ block, and two 1-D integrals. (For $\Nbar$ the frozen
+path applies the same exclusion convention as production --- the
+ball sliver enters as the incomplete moment
+$M_0(2)-M_0(x_{\rm excl}(\pi))$ with
+$M_0(y)=\int_0^y x\,\Ncal_{\rm rnd}(x)\,dx$ --- so the comparison is
+convention-for-convention.)
+
+\subsection{End-to-end: the selection-bias profile and the lensing observable}
+\label{sec:bsel_validation}
+
+The counts are inputs; the pipeline output is
+$\bsel(\theta)$ assembled through \S\ref{sec:closure}. This is
+the demanding test: the small-$\theta$ plateau
+eq.~\eqref{eq:bsmall_frozen} is a near-cancellation at small
+$\dprj=\lob-\ltr$, so fractional errors on the counts are
+\emph{amplified} in the numerator. To isolate the reformulation,
+both paths share the same downstream algebra
+(\texttt{SelBias.bias\_from\_precomp}) and the same $\btar$;
+only $(\Nbar, \KlssInf, \Klss)$ differ --- production grid values
+vs.\ frozen assembly.
+
+Both figures below swap only \texttt{SelBias.bias\_precompute}
+between production and frozen; every other line of the pipeline
+(NFW lookup, $\theta$-grid, aperture-weighting, plateau algebra)
+is byte-identical between the two curves in each panel. The
+second figure propagates the comparison one step further, into
+the lensing observable $\avg{\Delta\Sigma^{\rm prj}(R)}$
+(\texttt{delta\_sigma\_prj.py}), which uses $\bsel(\theta)$ as an
+input kernel inside the projected-NFW integral.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/pedag_frozen_vs_prod_bsel.png}
+\caption{$\bsel(\theta\mid\lob,\ltr,\zob)$ at
+$(\lob,\zob)=(20,0.5)$ for $\dprj\in\{0,3,6,10,15\}$: production
+(dashed) vs.\ frozen reformulation (solid, visually coincident).
+\emph{Bottom:} residual normalised by
+$\max_\theta|b^{\rm prod}|$ per $\dprj$; largest at $\dprj=0$
+(the sign-changing profile, where the small-$\theta$ plateau is a
+near-cancellation and amplifies input errors) but still
+$\lesssim 0.05\%$ of the profile scale.}
+\label{fig:bsel_vs_prod}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figs/pedag_frozen_vs_prod_delta_sigma.png}
+\caption{$\avg{\Delta\Sigma^{\rm prj}(R\mid\lob,\zob)}$ (cl+LSS
+piece) at the same $(\lob,\zob,\dprj)$ grid, production
+(dashed, circles) vs.\ frozen (solid, squares); curves overlap at
+plot resolution. \emph{Bottom:} fractional residual
+$\Delta\Sigma^{\rm froz}/\Delta\Sigma^{\rm prod}-1$,
+$\lesssim0.1\%$ throughout, confirming the $\bsel(\theta)$
+agreement survives being folded through the $\theta$-integral
+against the miscentered-NFW kernel. Points within $5\%$ of the
+$\dprj=0$ curve's sign crossing (top panel;
+$\Delta\Sigma^{\rm prj}(R)$ itself passes through zero there) are
+dropped from the residual: the fractional ratio diverges at the
+crossing even though the absolute difference stays at the same
+sub-percent level as everywhere else.}
+\label{fig:dsigma_vs_prod}
+\end{figure}
+
+Figure~\ref{fig:bsel_vs_prod} shows the result: the frozen
+counts reproduce the production $\bsel(\theta)$ to well below
+$0.1\%$ of the profile scale across all $\theta$ and all
+contamination levels, including the sign-changing $\dprj=0$
+profile ($0.07\%$ worst case at $\dprj=2$, measured in the
+\S\ref{sec:quad_validation} run). The plateau-cancellation
+amplification is visible but mild --- count errors of
+$\sim0.04\%$ surface as at most $\sim0.07\%$ on the profile ---
+because the $\Klss-\KlssInf$ denominator and the $\Nbar$
+subtraction are hit by \emph{correlated} errors (near and far
+zones are shared between the two kernels, \S\ref{sec:I1}), which
+largely cancel in the ratio.
+
+\subsection{Error budget}
+\begin{center}
+\small
+\begin{tabular}{l l l}
+\toprule
+approximation & order & size \\
+\midrule
+$\rp$ variable (eq.~\ref{eq:rp_def}) & exact & $0$ \\
+$\theta_{\max}$ cut vs.\ $f_A$ support & exact for $x_\lambda\le1$ & $\sim0$ \\
+total-donation theorem (eq.~\ref{eq:moments}) & exact & $0$ \\
+$\KlssInf$ kernel $=\sigma\Ncal_{\rm lss}$ & exact & $0$ \\
+frozen weights, near zone & odd part cancels; $(\Delta z\,\partial_z)^2$ & $\sim10^{-4}$ \\
+$(1+\pi/\chi_o)^2$ frozen, near zone & odd part cancels; $(\pi_s/\chi_o)^2$ & $\sim10^{-4}$ \\
+$(1+\pi/\chi_o)^2$, far zone & kept exactly (both powers) & $0$ \\
+far-zone moment expansion & $(2\Rex/\pi_s)^4$ & $\sim10^{-4}$ \\
+\emph{assembled total (measured)} & & $0.6$--$4\times10^{-4}$ \\
+\emph{end-to-end $\bsel(\theta)$ (measured)} & plateau cancellation, correlated-error relief & $\le 7\times10^{-4}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Stress test: MOR redshift-evolution slope}
+\label{sec:mor_stress}
+
+The frozen-weights argument of \S\ref{sec:frozen} rests on the MOR
+$P(\lambda\mid M,z)$ evolving slowly across the exclusion-affected
+zone. The MOR's own redshift-evolution rate is set by a single
+parameter, the satellite-count slope $\epsilon$ in
+$l_{\rm sat}(M,z)\propto\big[(1+z)/(1+z_{\rm pivot})\big]^{\epsilon}$
+(\texttt{MOR.epsilon}, fiducial default $\epsilon=0$); it is the one
+knob that speaks directly to the frozen approximation's core
+assumption, so it is the right dial to stress rather than assume.
+
+Because the question that matters operationally is not ``how close
+is frozen to \texttt{scipy.quad}'' but ``how much would swapping
+frozen in for the deployed pipeline change the answer,'' the
+comparison here is \emph{frozen against production directly} ---
+both evaluated on the identical $(\text{cosmology},\text{MOR})$
+stack at each $\epsilon$ --- rather than each against \texttt{quad}
+separately (the two vs.-quad errors are uncorrelated approximations
+of different origin and need not partially cancel, so a direct
+frozen-vs-production comparison is the stronger test):
+\begin{center}
+\small
+\begin{tabular}{r r r r r}
+\toprule
+$\lob$ & $\epsilon$ & $|\Delta P_1/P_1|$ & $|\Delta\Klss/\Klss|$ & $|\Delta\KlssInf/\KlssInf|$ \\
+\midrule
+$20.0$   & $-2.0$ & $0.0004\%$ & $0.0312\%$ & $0.0294\%$ \\
+$20.0$   & $0.0$  & $0.0055\%$ & $0.0297\%$ & $0.0274\%$ \\
+$20.0$   & $+2.0$ & $0.0103\%$ & $0.0280\%$ & $0.0246\%$ \\
+$52.5$   & $-2.0$ & $0.0064\%$ & $0.0175\%$ & $0.0036\%$ \\
+$52.5$   & $0.0$  & $0.0002\%$ & $0.0183\%$ & $0.0011\%$ \\
+$52.5$   & $+2.0$ & $0.0028\%$ & $0.0185\%$ & $0.0059\%$ \\
+$130.0$  & $-2.0$ & $0.0734\%$ & $0.0025\%$ & $0.0134\%$ \\
+$130.0$  & $0.0$  & $0.0483\%$ & $0.0052\%$ & $0.0050\%$ \\
+$130.0$  & $+2.0$ & $0.0275\%$ & $0.0137\%$ & $0.0225\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+at $\zob=0.60$ ($\Delta X \equiv X^{\rm frozen}-X^{\rm prod}$, both
+on the same MOR); full 9-point $\epsilon\in[-2,2]$ sweep in
+\texttt{validations/cache/frozen\_mor\_epsilon\_stress.csv}, produced
+by \texttt{validations/frozen\_mor\_epsilon\_stress.py}. Two
+findings:
+\begin{itemize}
+\item \textbf{The number.} Worst case over the full sweep is
+      $0.073\%$ ($P_1$ at $\lob=130$, $\epsilon=-2$) --- inside the
+      $0.1\%$ pipeline tolerance, but with less margin than the
+      vs.-\texttt{quad} comparisons of \S\ref{sec:quad_validation}
+      suggested in isolation.
+\item \textbf{The slope.} Only $P_1$ at $\lob=130$ shows a clear
+      \emph{monotonic} trend with $\epsilon$ (0.028\% at
+      $\epsilon=+2$ rising to $0.073\%$ at $\epsilon=-2$); every
+      other $(\lob,X)$ combination is flat or non-monotonic across
+      the sweep, at 3--10$\times$ smaller amplitude. The trend tracks
+      $P_1$ specifically because $\Nbar$'s frozen amplitude-drift
+      spline $s_{\rm w}(z)$ (\S\ref{sec:far}) is the one piece of
+      the reformulation that carries the MOR's $z$-dependence
+      explicitly beyond the near zone; $\Klss,\KlssInf$ do not show
+      it because production's own $N_{z,\rm bias}=48$ grid error is
+      already the dominant term there (\S\ref{sec:relation}).
+\end{itemize}
+This is a stress test, not a physical regime: the DES Y1 NC+3x2pt
+calibration \texttt{MOR} defaults to (and is centred near)
+$\epsilon=0$ (\texttt{mor.py}), far inside the flat part of this
+sweep. The result that matters is qualitative: nothing here breaks
+the frozen reformulation even at $\epsilon=\pm2$, several times the
+plausible astrophysical range.
+
+\section{Relation to the production recipe}
+\label{sec:relation}
+
+The production ring+outer GL split
+(\texttt{richness\_selection.tex}, \S``The $z$-axis'') and this
+reformulation attack the same integrand from opposite directions:
+the former keeps the original coordinates and engineers the grid
+around the sharp features; the latter changes coordinates so the
+sharp features never form. They agree at the
+$\lesssim 4\times10^{-4}$ level at the fiducial
+$(\lob,\zob)=(20,0.5)$ point, and stay $\le 7.3\times10^{-4}$
+under the $\epsilon\in[-2,2]$ MOR-slope stress test of
+\S\ref{sec:mor_stress} at $\zob=0.60$ --- the two recipes' residual
+disagreement is not sensitive to how fast the MOR itself evolves in
+$z$. The reformulation additionally
+buys: the exact $\sigma\Ncal_{\rm lss}$ relation for the $\KlssInf$ kernel
+(halving the kernel work), the total-donation theorem
+(collapsing $\Nbar$ and the far-zone $\Klss$ amplitude), and a
+2-D-instead-of-4-D numerical core.
+
+Reference implementation:
+\texttt{validations/frozen\_kernels.py} (kernels, assembly, and
+the \S\ref{sec:kernels}--\ref{sec:counts} figures;
+code symbols follow the production names of the dictionary in
+\S\ref{sec:question});
+\texttt{docs/make\_validation\_plots\_frozen\_physics.py} (the
+end-to-end comparison figures of \S\ref{sec:bsel_validation});
+frozen-ring validation table of \S\ref{sec:frozen} from the ring
+freeze test. Production \texttt{SelBias.\_P\_operator} is
+unchanged by this note.
+\fi
+
+\end{document}

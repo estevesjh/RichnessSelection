@@ -26,8 +26,24 @@ class GridConfig:
       - Nth=10 GL nodes (split-at-exclusion; theta_excl(z) is the
         lower limit of the GL interval so the integrand is smooth)
       - NM=24 GL nodes (mass integrand is smooth)
+
+    Nz_bias is a separate, smaller z-node budget used only by
+    SelBias._P_operator (P[1], I_1, I_2) -- SigmaPrj/DeltaSigmaPrj
+    keep reading Nz (unchanged) for their own z-integration via
+    SelBias._z_grid. The ring+outer split in _z_grid enforces hard
+    floors (n_ring >= 9, n_outer >= 15 per side), so any Nz below
+    ~40 collapses to the same 39-node grid -- 48 sits just above
+    that floor with headroom. Convergence vs an Nz=200,Nth=30
+    reference across the 12 DES Y3 (lob,zob) bins: worst-case error
+    at Nz=48 is 0.045% (well inside the 0.1% tolerance the existing
+    quad-matched tests already enforce), for a ~1.7x reduction in
+    the expensive per-z (theta,lambda,M) contraction vs Nz=80. See
+    docs/richness_selection.tex Sec. "z-axis" and the z-axis
+    analytic-exclusion review for the derivation and the convergence
+    table this default is pinned from.
     """
     Nz: int = 80
+    Nz_bias: int = 48
     NM: int = 24
     Nth: int = 10
     ln_M_min: float = 12.5 * 2.302585092994046   # log(10^12.5)

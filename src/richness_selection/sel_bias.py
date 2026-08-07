@@ -30,6 +30,7 @@ The angular f_A is the true theta-dependent aperture-overlap fraction
 theta-integrated version and would double-count the theta integral).
 """
 from __future__ import annotations
+from dataclasses import dataclass, field
 import numpy as np
 from scipy.optimize import bisect
 
@@ -42,6 +43,51 @@ from .geometry import R_lambda, theta_lambda, area_overlap
 from .photoz import w_z, sigma_z, zmin4zkernel, zmax4zkernel
 from .gl import gl_nodes
 from .config import DEFAULT_GRID, GridConfig
+
+
+@dataclass(frozen=True)
+class BiasPlateaus:
+    """lambda_tr-marginalised selection-bias plateaus at one (lob, zob).
+
+    Per-ltr quantities are vectors on the GL marginalisation grid
+    (eqs. bls + bss of docs/richness_selection_frozen.tex evaluated on
+    the whole grid at once); the only scalars are the GL-marginalised
+    plateaus, sum(w_ltr * b_rm_X_ltr_vec).
+    """
+    lob: float
+    zob: float
+    ltr: np.ndarray = field(repr=False)            # GL nodes over lambda_tr
+    w_ltr: np.ndarray = field(repr=False)          # normalised GL x P(ltr|lob,zob)
+    delta_prj: np.ndarray = field(repr=False)      # per-ltr, eq. bls
+    b_rm_ss_ltr_vec: np.ndarray = field(repr=False)   # per-ltr eq. bss
+    b_rm_ls_ltr_vec: np.ndarray = field(repr=False)   # per-ltr eq. bls
+    b_rm_ss: float = float("nan")                  # marginalised small-scale
+    b_rm_ls: float = float("nan")                  # marginalised large-scale
+
+
+@dataclass(frozen=True)
+class MarginalisedBias:
+    """The marginalised profile b_sel(theta | lob, zob) -- eq. brm.
+
+    This is the object the lensing pipeline consumes: SigmaPrj /
+    DeltaSigmaPrj evaluate it on their theta grid.  Built from the
+    marginalised plateaus of ``BiasPlateaus`` and the fixed sigmoid
+    (k = damping/theta_lam_ob, theta0 = theta0_frac * theta_lam_ob).
+    """
+    lob: float
+    zob: float
+    theta_lam_ob: float
+    b_rm_ss: float
+    b_rm_ls: float
+    damping: float = 2.5
+    theta0_frac: float = 0.5
+
+    def __call__(self, theta):
+        theta = np.asarray(theta, dtype=float)
+        k = self.damping / self.theta_lam_ob
+        theta0 = self.theta0_frac * self.theta_lam_ob
+        s = 1.0 / (1.0 + np.exp(-k * (theta - theta0)))
+        return self.b_rm_ss + (self.b_rm_ls - self.b_rm_ss) * s
 
 
 class SelBias:
@@ -88,6 +134,153 @@ class SelBias:
         theta0 = self.theta0_frac * theta_lob
         return 1.0 / (1.0 + np.exp(-k * (theta - theta0)))
 
+    # ---------------- f_P1(z): X=1 specialisation, no bias/xi_NL -------
+    #
+    # Standalone, additive helper for testing alternative z-axis
+    # quadratures against P[1] in isolation (X=1 needs neither bias(M,z)
+    # nor xi_NL, so this is cheaper per-z than the full P_operator loop).
+    # Does not touch _P_operator; same theta_excl(z) split-at-exclusion
+    # convention so f_P1 matches P[1]'s per-z contribution exactly.
+
+    def _f_p1(self, zs, lob, zob):
+        """f_P1(z) = dV/dzdOmega(z) * inner(M,lambda,theta; X=1) at each z.
+
+        int dz f_P1(z) == P[1] from _P_operator (same integrand, just
+        evaluated at caller-chosen z nodes instead of the ring+outer grid).
+        """
+        zs = np.atleast_1d(np.asarray(zs, dtype=float))
+        Nz = zs.size
+        theta_lob = self._theta_lob(lob, zob)
+        chi_o = float(self.cosmo.chi(zob))
+        R_excl = R_lambda(lob) * (1.0 + zob)
+        chi_z = self.cosmo.chi(zs)
+        dV = self.cosmo.dV_dzdOm(zs)
+        wz_kern = w_z(zs, zob)
+
+        cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
+            2.0 * chi_z * chi_o + 1e-30)
+        cos_excl = np.clip(cos_excl, -1.0, 1.0)
+        theta_excl_z = np.arccos(cos_excl)
+        eps_theta = 1e-6
+        no_excl = cos_excl >= 1.0 - 1e-12
+        theta_excl_z = np.where(no_excl, eps_theta, theta_excl_z)
+        theta_max = 2.0 * theta_lob
+
+        lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)
+        log10_Mmin = np.log10(self.min_mass4integral)
+        ln_M_min = np.log(10.0 ** log10_Mmin)
+        ln_M_max = np.log(10.0 ** self.ln_M_max_log10)
+        lnMs, wM = gl_nodes(ln_M_min, ln_M_max, self.grid.NM)
+        Ms = np.exp(lnMs)
+        M_weight = wM * Ms
+
+        n_mz = self.hmf(Ms[:, None], zs[None, :])
+        p_lmz = self.mor.pdf(lam_grid[:, None, None], Ms[None, :, None],
+                             zs[None, None, :])
+
+        Nth = self.grid.Nth
+        F = np.zeros(Nz)
+        for iz in range(Nz):
+            th_lo = max(theta_excl_z[iz], eps_theta)
+            if th_lo >= theta_max:
+                continue
+            ths_z, wth_z = gl_nodes(th_lo, theta_max, Nth)
+            sin_th_z = np.sin(ths_z)
+            th_weight_z = wth_z * 2.0 * np.pi * sin_th_z
+            theta_lam_l_z = R_lambda(lam_grid) * (1.0 + zs[iz]) / chi_z[iz]
+            fA_z = area_overlap(ths_z, theta_lob, theta_lam_l_z)
+            ang_P1_z = np.einsum('t,tL->L', th_weight_z, fA_z)
+            rho_prefac_z = wz_kern[iz] * lam_grid
+            p_lm_z = p_lmz[:, :, iz]
+            lam_int_P1_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_P1_z)
+            F[iz] = np.sum(M_weight * n_mz[:, iz] * lam_int_P1_z)
+        return dV * F
+
+    # ---------------- f_I1(z), f_I2(z): full X=b*xi[*sigma] -----------
+    #
+    # Same additive-helper pattern as _f_p1, for testing alternative
+    # z-axis quadratures against I1/I2 in isolation. xi_NL is clipped to
+    # >=0: it goes negative over the BAO-trough tail of the outer decay
+    # range at higher zob (checked numerically), which is a physically
+    # marginal effect (order 1e-4, in a region already suppressed by
+    # w_z->0) but breaks any log-space treatment of the integrand, so we
+    # drop it here rather than carry it through.  Does not touch
+    # _P_operator.
+
+    def _f_i1_i2(self, zs, lob, zob, clip_negative_xi=True):
+        """Return (f_I1(z), f_I2(z)) arrays at the given z nodes.
+
+        int dz f_I2(z) == I2, int dz f_I1(z) == I1 from _P_operator
+        (same integrand, evaluated at caller-chosen z nodes).
+        """
+        zs = np.atleast_1d(np.asarray(zs, dtype=float))
+        Nz = zs.size
+        theta_lob = self._theta_lob(lob, zob)
+        chi_o = float(self.cosmo.chi(zob))
+        R_excl = R_lambda(lob) * (1.0 + zob)
+        chi_z = self.cosmo.chi(zs)
+        dV = self.cosmo.dV_dzdOm(zs)
+        wz_kern = w_z(zs, zob)
+
+        cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
+            2.0 * chi_z * chi_o + 1e-30)
+        cos_excl = np.clip(cos_excl, -1.0, 1.0)
+        theta_excl_z = np.arccos(cos_excl)
+        eps_theta = 1e-6
+        no_excl = cos_excl >= 1.0 - 1e-12
+        theta_excl_z = np.where(no_excl, eps_theta, theta_excl_z)
+        theta_max = 2.0 * theta_lob
+
+        lam_grid, wlam = gl_nodes(1e-6, float(lob), self.n_ltr)
+        log10_Mmin = np.log10(self.min_mass4integral)
+        ln_M_min = np.log(10.0 ** log10_Mmin)
+        ln_M_max = np.log(10.0 ** self.ln_M_max_log10)
+        lnMs, wM = gl_nodes(ln_M_min, ln_M_max, self.grid.NM)
+        Ms = np.exp(lnMs)
+        M_weight = wM * Ms
+
+        bM_mz = self.bias(Ms[:, None], zs[None, :])
+        n_mz = self.hmf(Ms[:, None], zs[None, :])
+        p_lmz = self.mor.pdf(lam_grid[:, None, None], Ms[None, :, None],
+                             zs[None, None, :])
+
+        Nth = self.grid.Nth
+        F1 = np.zeros(Nz)
+        F2 = np.zeros(Nz)
+        for iz in range(Nz):
+            th_lo = max(theta_excl_z[iz], eps_theta)
+            if th_lo >= theta_max:
+                continue
+            ths_z, wth_z = gl_nodes(th_lo, theta_max, Nth)
+            sin_th_z = np.sin(ths_z)
+            sigmoid_z = self._sigmoid_theta(ths_z, lob, zob)
+            th_weight_z = wth_z * 2.0 * np.pi * sin_th_z
+            cos_th_z = np.cos(ths_z)
+            dchi_z = np.sqrt(np.maximum(
+                chi_z[iz] ** 2 + chi_o ** 2
+                - 2.0 * chi_z[iz] * chi_o * cos_th_z, 0.0))
+            xi_z = self.xi_NL(dchi_z, zob)
+            if clip_negative_xi:
+                xi_z = np.maximum(xi_z, 0.0)
+            theta_lam_l_z = R_lambda(lam_grid) * (1.0 + zs[iz]) / chi_z[iz]
+            fA_z = area_overlap(ths_z, theta_lob, theta_lam_l_z)
+
+            ang_I2_z = np.einsum('t,tL,t->L', th_weight_z, fA_z, xi_z)
+            ang_I1_z = np.einsum('t,t,tL,t->L', th_weight_z, sigmoid_z,
+                                  fA_z, xi_z)
+
+            rho_prefac_z = wz_kern[iz] * lam_grid
+            p_lm_z = p_lmz[:, :, iz]
+            lam_int_I2_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_I2_z)
+            lam_int_I1_z = np.einsum('L,LM,L->M', wlam, p_lm_z,
+                                      rho_prefac_z * ang_I1_z)
+
+            F2[iz] = np.sum(M_weight * n_mz[:, iz] * bM_mz[:, iz] * lam_int_I2_z)
+            F1[iz] = np.sum(M_weight * n_mz[:, iz] * bM_mz[:, iz] * lam_int_I1_z)
+        return dV * F1, dV * F2
+
     # ---------------- b_eff(lob, zob) ---------------------------------
 
     def b_eff(self, lob, zob):
@@ -110,8 +303,8 @@ class SelBias:
         P = self.mor.pdf(np.array([float(lob)])[:, None],
                          m_grid[None, :], zob).ravel()
         wt = n_m * P * m_grid
-        num = np.trapz(wt * b_m, np.log(m_grid))
-        den = np.trapz(wt, np.log(m_grid))
+        num = np.trapezoid(wt * b_m, np.log(m_grid))
+        den = np.trapezoid(wt, np.log(m_grid))
         val = float(num / den) if den > 0 else float("nan")
         self._cache[key] = val
         return val
@@ -212,7 +405,7 @@ class SelBias:
         chi_ref = self.cosmo.chi(zs_ref)
         dchi_dz_ref = np.gradient(chi_ref, zs_ref)
 
-        zs, wzs = self._z_grid(lob, zob, g.Nz,
+        zs, wzs = self._z_grid(lob, zob, g.Nz_bias,
                                chi_o, R_excl,
                                z_fg_lo, z_bg_hi,
                                zs_ref, chi_ref, dchi_dz_ref)
@@ -400,47 +593,101 @@ class SelBias:
         (1 - sigma(theta)) + b_infty_bar sigma(theta)``.  Formalised
         in ``docs/richness_selection.tex`` eq.~\\eqref{eq:b_marg_sigmoid}.
         """
-        cache_key = ("marg", float(lob), float(zob),
-                     int(ltr_grid_size), bool(use_plob_ltr))
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        p = self.plateaus(lob, zob, ltr_grid_size=ltr_grid_size,
+                          precomp=precomp, use_plob_ltr=use_plob_ltr)
+        return (p.b_rm_ss, p.b_rm_ls)
 
+    # ---------------- vectorised closure + marginalised plateaus ------
+    #
+    # Shared by the production and frozen methods (only
+    # ``bias_precompute`` differs underneath): the per-ltr closure
+    # eqs. (bls) + (bss) of docs/richness_selection_frozen.tex,
+    # evaluated on the whole lambda_tr GL grid at once, and the
+    # GL-marginalised plateaus b_rm_ss / b_rm_ls built from them.
+
+    def _closure_ltr_vec(self, precomp, ltr_vec):
+        """Vectorised ``bias_from_precomp``: eqs. (bls) + (bss) on an
+        ltr array.  Returns (delta_prj, b_rm_ss_ltr_vec, b_rm_ls_ltr_vec)."""
+        ltr_vec = np.asarray(ltr_vec, dtype=float)
+        P1 = precomp["P1"]; I1 = precomp["I1"]; I2 = precomp["I2"]
+        beff = precomp["b_eff"]; D_RND = precomp["Delta_RND"]
+        denom = precomp["denom"]; lob = precomp["lob"]
+
+        delta = (lob - ltr_vec) / D_RND - 1.0
+        b_ls = beff * (1.0 + self.boost_slope * delta)
+        if abs(denom) < 1e-12 * (abs(I1) + abs(I2) + 1e-30):
+            b_ss = b_ls.copy()
+        else:
+            b_ss = ((lob - ltr_vec) - P1 - b_ls * I1) / denom
+        return delta, b_ss, b_ls
+
+    def _ltr_marginalisation_grid(self, lob, zob, ltr_grid_size,
+                                  use_plob_ltr):
+        """(ltr nodes, normalised GL x P(ltr | lob, zob) weights)."""
         t_nodes, t_wts = gl_nodes(1.0, 3.0 * float(lob), ltr_grid_size * 2)
-
-        # prior(ltr, z) = int dM n(M,z) P(ltr | M, z)
         log10_Mmin = np.log10(self.min_mass4integral)
         m_grid = 10.0 ** np.linspace(log10_Mmin, self.ln_M_max_log10, 50)
         hmf_m = self.hmf(m_grid, zob)
         p_ltr_M = self.mor.pdf(t_nodes[:, None], m_grid[None, :], zob)
-        prior_ltr = np.trapz(p_ltr_M * (hmf_m * m_grid)[None, :],
-                             np.log(m_grid), axis=1)
-
+        prior_ltr = np.trapezoid(p_ltr_M * (hmf_m * m_grid)[None, :],
+                                 np.log(m_grid), axis=1)
         if use_plob_ltr:
             from .plob_ltr import P_lob_given_ltr
-            p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(ltr), zob))
-                                  for ltr in t_nodes])
+            p_lob_ltr = np.array([float(P_lob_given_ltr(lob, float(t), zob))
+                                  for t in t_nodes])
             p_ltr = p_lob_ltr * prior_ltr
         else:
             p_ltr = prior_ltr
+        weight = t_wts * p_ltr
+        den = float(np.sum(weight))
+        w_norm = weight / den if den > 0 else np.full_like(weight, np.nan)
+        return t_nodes, w_norm
 
-        num_zero = 0.0
-        num_infty = 0.0
-        den = 0.0
-        for ltr, w, pw in zip(t_nodes, t_wts, p_ltr):
-            weight = float(w * pw)
-            if weight == 0.0:
-                continue
-            pr = self.bias_from_precomp(precomp, float(ltr))
-            num_zero += weight * pr["b_zero"]
-            num_infty += weight * pr["b_infty"]
-            den += weight
+    def plateaus(self, lob, zob, ltr_grid_size=None, precomp=None,
+                 use_plob_ltr: bool = True) -> BiasPlateaus:
+        """lambda_tr-marginalised plateaus at (lob, zob) -> BiasPlateaus.
 
-        if den <= 0:
-            val = (float("nan"), float("nan"))
-        else:
-            val = (num_zero / den, num_infty / den)
+        Per-ltr vectors (eqs. bls, bss on the GL grid) plus the
+        marginalised scalars b_rm_ss / b_rm_ls.  Cached per
+        (lob, zob, grid, convention, operator values).
+        """
+        if ltr_grid_size is None:
+            ltr_grid_size = self.grid.ltr_grid_size
+        pre = precomp if precomp is not None else self.bias_precompute(lob, zob)
+        cache_key = ("brm_plateaus", float(lob), float(zob),
+                     int(ltr_grid_size), bool(use_plob_ltr),
+                     float(pre["P1"]), float(pre["I1"]), float(pre["I2"]),
+                     float(pre["Delta_RND"]))
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        ltr, w_ltr = self._ltr_marginalisation_grid(
+            lob, zob, ltr_grid_size, use_plob_ltr)
+        delta, b_ss_vec, b_ls_vec = self._closure_ltr_vec(pre, ltr)
+        val = BiasPlateaus(
+            lob=float(lob), zob=float(zob), ltr=ltr, w_ltr=w_ltr,
+            delta_prj=delta,
+            b_rm_ss_ltr_vec=b_ss_vec, b_rm_ls_ltr_vec=b_ls_vec,
+            b_rm_ss=float(np.sum(w_ltr * b_ss_vec)),
+            b_rm_ls=float(np.sum(w_ltr * b_ls_vec)))
         self._cache[cache_key] = val
         return val
+
+    def marginalised_bias(self, lob, zob, ltr_grid_size=None, precomp=None,
+                          use_plob_ltr: bool = True) -> MarginalisedBias:
+        """The theta-callable b_sel(theta | lob, zob) -- eq. brm with the
+        marginalised plateaus.  This is the object SigmaPrj consumes."""
+        p = self.plateaus(lob, zob, ltr_grid_size=ltr_grid_size,
+                          precomp=precomp, use_plob_ltr=use_plob_ltr)
+        return MarginalisedBias(
+            lob=float(lob), zob=float(zob),
+            theta_lam_ob=self._theta_lob(lob, zob),
+            b_rm_ss=p.b_rm_ss, b_rm_ls=p.b_rm_ls,
+            damping=self.damping, theta0_frac=self.theta0_frac)
+
+    def b_rm(self, theta, lob, zob, **kwargs):
+        """Marginalised profile b_sel(theta, lob, zob) (eq. brm)."""
+        return self.marginalised_bias(lob, zob, **kwargs)(theta)
 
     def b_sel_marginalised(self, theta, lob, zob, ltr_grid_size=None,
                            precomp=None, use_plob_ltr: bool = True):
