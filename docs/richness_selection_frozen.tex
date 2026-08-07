@@ -404,16 +404,22 @@ halo bias of a mass-selected sample at the same $(\lob,\zob)$,
 \label{eq:bhalo}
 \end{equation}
 through the Buzzard-calibrated empirical relation
-\begin{equation}
-\brmls \;=\; \bhalo \left[ 1 + 0.13\, \dprjx\right],
+\begin{align}
+\brmls \;&=\; \bhalo \left[ 1 + 0.13\, \dprjx\right],
 \qquad
 \dprjx
-= \frac{\lob-\ltr}{\Dprnd} - 1,
+= \frac{\lob-\ltr}{\Dp_{\rm halo}} - 1,
+\notag\\
+\Dp_{\rm halo} \;&=\; \Dprnd
++ \bhalo\big[\tDpss + \tDpls\big],
 \label{eq:bls}
-\end{equation}
-where $\dprjx$ measures the excess of the observed inflation over
-the uniform-interloper expectation $\Dprnd$ of
-eq.~\eqref{eq:Dprj_rnd}. Second, the observed inflation must
+\end{align}
+where $\Dp_{\rm halo}$ is the contamination a \emph{mass-selected}
+target would suffer --- eq.~\eqref{eq:Dprj_split} with the constant
+$\bhalo$ in place of both plateaus --- and $\dprjx$ measures the
+fractional excess of the observed inflation over it (the
+calibration of the $0.13$ slope is tied to this denominator).
+Second, the observed inflation must
 be exactly accounted for: substituting
 eqs.~\eqref{eq:Dprj_rnd}--\eqref{eq:Dprj_ls} into
 eqs.~\eqref{eq:lob_split} and \eqref{eq:Dprj_split},
@@ -442,10 +448,10 @@ closure:
       1-D mass integral;
 \item compute $\Dprnd$, eq.~\eqref{eq:Dprj_rnd} --- the constant
       $\Dlrnd$ times the aperture area;
-\item form $\dprjx$ and the large-scale plateau $\brmls$,
-      eq.~\eqref{eq:bls};
 \item compute the unit-bias clustered integrals $\tDpss$ and
       $\tDpls$, eqs.~\eqref{eq:Dprj_ss}--\eqref{eq:Dprj_ls};
+\item form $\Dp_{\rm halo}$, $\dprjx$ and the large-scale plateau
+      $\brmls$, eq.~\eqref{eq:bls};
 \item close the small-scale plateau $\brmss$,
       eq.~\eqref{eq:bss}.
 \end{enumerate}
@@ -550,7 +556,16 @@ w(z,\zob)\;\Dl(z),
 \tDpss = \tDp^{\rm ss,excl}_{\rm lss} + \tDp^{\rm ss,cyl}_{\rm lss}.
 \label{eq:alg_split}
 \end{equation}
-The \emph{exclusion zone}, $|\pi|\le\pis\equiv20\,\Rex$, is the
+(The fiducial pipeline additionally removes the halo-exclusion
+sphere from the random channel; in the sky variables this
+carve-out is the incomplete transverse moment
+$M_0(2)-M_0(x_{\rm excl}(\pi))$, with
+$M_0(y)=\int_0^y x\,I_0(x)\,dx$ over the unweighted analogue of
+eq.~\ref{eq:Ilam} and
+$x_{\rm excl}=\sqrt{\max(0,\,1-(\pi/\Rex)^2)}$ --- a ring-sliver
+correction of a few $\times10^{-3}$ relative, adopted by the
+implementation so that all three operators share one exclusion
+convention.) The \emph{exclusion zone}, $|\pi|\le\pis\equiv20\,\Rex$, is the
 cluster's own neighbourhood: it contains the halo-exclusion
 sphere $r<\Rex$ and the target aperture, and every calculation
 there must track the boundary $r=\Rex$. The
@@ -836,14 +851,128 @@ integrates out over the sky (total-donation identity) and the
 first member of eq.~\eqref{eq:alg_split} follows directly from
 eqs.~\eqref{eq:Dlam_rnd} and \eqref{eq:Dprj_rnd}.
 
-Validated against \texttt{scipy.quad} on
-eq.~\eqref{eq:step1}: $0.006$--$0.04\%$ on the assembled
-operators, $\le0.07\%$ of the profile scale on the end-to-end
-$\brm(\theta)$ --- ss and ls share one pipeline, so their errors
-are correlated and largely cancel in the $\brmss$ closure of
-eq.~\eqref{eq:bss}. Both far below the $0.1\%$ pipeline
-tolerance.
+The full validation --- operators against \texttt{scipy.quad},
+marginalised plateaus and the end-to-end $\brm(\theta)$ against
+the production fiducial --- is \S\ref{sec:validation}.
 
+\section{Validation}
+\label{sec:validation}
+
+Reference implementation: \texttt{FrozenSelBias}
+(\texttt{src/richness\_selection/frozen\_bsel.py}), a drop-in for
+the production \texttt{SelBias} --- only the computation of the
+three operators changes; the closure, the $\ltr$-marginalisation
+and the lensing pipeline are shared code. Both methods use the
+fiducial (Costanzi) conventions --- the $\Dp_{\rm halo}$
+denominator of eq.~\eqref{eq:bls} and the random-channel
+exclusion carve-out of \S\ref{sec:operators} --- so every
+residual below is pure operator numerics. Scripts:
+\texttt{validations/frozen\_bsel\_validation.py} (operators,
+plateaus, budget),
+\texttt{docs/make\_validation\_plots\_frozen\_physics.py}
+(end-to-end figures).
+
+\subsection{Operators against \texorpdfstring{\texttt{scipy.quad}}{scipy.quad}}
+
+Adaptive quadrature in $z$ ($\epsilon_{\rm rel}=10^{-6}$) on the
+original 4-D form eq.~\eqref{eq:step1}, matched inner grids,
+against the production grid code (fiducial) and the frozen
+algorithm:
+\begin{center}
+\small
+\begin{tabular}{r r l r r r}
+\toprule
+$\lob$ & $\zob$ & source & $\Dprnd$ err & $\tDpls$ err
+& (ss+ls) err \\
+\midrule
+$20.0$  & $0.500$ & fiducial & $0.018\%$ & $0.004\%$ & $0.002\%$ \\
+        &         & frozen   & $0.006\%$ & $0.037\%$ & $0.037\%$ \\
+$52.5$  & $0.425$ & fiducial & $0.007\%$ & $0.020\%$ & $0.021\%$ \\
+        &         & frozen   & $0.015\%$ & $0.030\%$ & $0.019\%$ \\
+$130.0$ & $0.575$ & fiducial & $0.004\%$ & $0.026\%$ & $0.027\%$ \\
+        &         & frozen   & $0.017\%$ & $0.003\%$ & $0.003\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Worst frozen error $0.037\%$, comfortably below the $0.1\%$
+pipeline tolerance and on par with the fiducial grid code.
+
+\subsection{Marginalised plateaus and budget closure}
+
+The $\ltr$-marginalised plateaus (the scalars that feed the
+lensing kernel through eq.~\ref{eq:brm}), fiducial
+$\rightarrow$ frozen:
+\begin{center}
+\small
+\begin{tabular}{r r c c r}
+\toprule
+$\lob$ & $\zob$ & $\brmss$ & $\brmls$
+& max per-$\ltr$ dev \\
+\midrule
+$20.0$  & $0.500$ & $23.476 \rightarrow 23.484$
+& $3.824 \rightarrow 3.824$ & $0.06\%$ \\
+$52.5$  & $0.425$ & $21.056 \rightarrow 21.052$
+& $5.924 \rightarrow 5.924$ & $0.03\%$ \\
+$130.0$ & $0.575$ & $55.933 \rightarrow 55.957$
+& $12.440 \rightarrow 12.440$ & $0.04\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The per-$\ltr$ plateau vectors deviate by at most $0.06\%$
+anywhere on the marginalisation grid. The budget identity
+eq.~\eqref{eq:budget} closes to machine precision
+($\max|{\rm budget}-(\lob-\ltr)| = 1.8\times10^{-15}$) --- exact
+by construction of eq.~\eqref{eq:bss}, verified as an
+implementation check.
+
+\subsection{End-to-end: \texorpdfstring{$\brm(\theta)$}{brm} and the lensing observable}
+
+Figure~\ref{fig:bsel_vs_prod} sweeps the fixed-$\ltr$ profiles at
+$(\lob,\zob)=(20,0.5)$: the frozen curves are visually coincident
+with production, with residuals $\le0.044\%$ of the profile scale
+--- worst for the sign-changing $\dprj=0$ profile, where the
+$\brmss$ closure is a near-cancellation and amplifies operator
+errors; the amplification stays mild because ss and ls share one
+pipeline (\S\ref{sec:operators}) and their errors largely cancel
+in eq.~\eqref{eq:bss}. Figure~\ref{fig:dsigma_vs_prod} propagates
+the comparison through the lensing pipeline into
+$\avg{\DSprj(R)}$ (eq.~\ref{eq:DSprj}): residuals stay below
+$\simeq0.05\%$ everywhere away from the $\dprj=0$ sign crossing.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/pedag_frozen_vs_prod_bsel.png}
+\caption{$b_{\rm sel}(\theta\mid\lob,\ltr,\zob)$ at
+$(\lob,\zob)=(20,0.5)$ for $\dprj\in\{0,3,6,10,15\}$: production
+(dashed) vs frozen (solid, visually coincident). \emph{Bottom:}
+residual normalised by $\max_\theta|b^{\rm prod}|$ per $\dprj$;
+worst $0.044\%$ at $\dprj=0$.}
+\label{fig:bsel_vs_prod}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{figs/pedag_frozen_vs_prod_delta_sigma.png}
+\caption{$\avg{\DSprj(R\mid\lob,\zob)}$ (cl+LSS piece) at the
+same $(\lob,\zob,\dprj)$ grid, production (dashed, circles) vs
+frozen (solid, squares); curves overlap at plot resolution.
+\emph{Bottom:} fractional residual, $\lesssim0.05\%$ throughout.
+Points within $5\%$ of the $\dprj=0$ curve's sign crossing are
+dropped from the residual: the fractional ratio diverges there
+while the absolute difference stays at the same level as
+everywhere else.}
+\label{fig:dsigma_vs_prod}
+\end{figure}
+
+\subsection{Cost}
+
+Per $(\lob,\zob)$, median over repeats: frozen $9.2\,$ms fresh
+vs production $6.4\,$ms; both $\sim0.3\,\mu$s on cached repeat
+calls (all levels of the frozen computation --- the
+$(M,\lambda)$ contraction, the line-of-sight tables, the drift
+splines, the assembled operators --- are memoised per
+$(\lob,\zob)$). Benchmark:
+\texttt{validations/benchmark\_frozen.py}.
 
 % ==================================================================
 % EVERYTHING BELOW: previous draft, commented out during the

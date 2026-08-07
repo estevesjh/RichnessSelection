@@ -23,14 +23,10 @@ between the "production" and "frozen" curves in both figures --
 everything else (NFW lookup, theta-grid, marginalisation) is shared,
 identical code.
 
-NOTE on conventions: FrozenSelBias follows the note's eq. (bls)
-Poisson delta_prj convention (Delta_RND = <Dprj>_rnd) and the clean
-random channel (no exclusion carve-out), while production SelBias
-uses Delta_RND = P1 + b_eff I2 and carves the exclusion ball out of
-P1.  The frozen-vs-production offsets in these figures therefore
-include those *convention* differences on top of the operator
-numerics; the convention-free accuracy gate is
-validations/frozen_bsel_validation.py (operators vs scipy.quad).
+FrozenSelBias uses the same FIDUCIAL (Costanzi / production)
+conventions as SelBias -- Delta_RND = P1 + b_eff I2 and the
+exclusion carve-out on the random channel -- so the residuals in
+these figures are pure operator numerics.
 
 Outputs:
     docs/figs/pedag_frozen_vs_prod_bsel.png

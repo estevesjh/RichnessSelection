@@ -15,14 +15,16 @@ documented against, one of its equation labels:
                                                             ``DeltaSigmaPrj`` consuming
                                                             ``MarginalisedBias`` via
                                                             ``SigmaPrj._bsel_at``
-    eq. (Dprj_rnd)    <Dprj>_rnd = pi thob^2 <Dlam>_rnd      -> ``Dprj_rnd``
+    eq. (Dprj_rnd)    <Dprj>_rnd                             -> ``Dprj_rnd``
+                      (fiducial exclusion carve-out applied; see its docstring)
     eq. (Dprj_ss/ls)  <Dprj>^X = b_rm^X <Dprj~>^X            closure via
                                                             ``SelBias._closure_ltr_vec``
     eq. (bhalo)       mass-averaged halo bias                -> inherited ``b_eff``
     eq. (bls)         b_rm^ls = b_halo [1 + 0.13 delta_prj],
-                      delta_prj = (lob-ltr)/<Dprj>_rnd - 1   POISSON denominator:
-                                                            ``as_precomp`` stores
-                                                            Delta_RND = <Dprj>_rnd
+                      delta_prj = (lob-ltr)/<Dprj>_halo - 1  FIDUCIAL (Costanzi)
+                                                            denominator:
+                                                            <Dprj>_halo = rnd
+                                                            + b_halo (ss + ls)
     eq. (budget)      lob-ltr = rnd + b^ls ls + b^ss ss      test assertion
     eq. (bss)         b_rm^ss closure                        inherited
                                                             ``bias_from_precomp``
@@ -94,16 +96,20 @@ class FrozenOperators:
     def as_precomp(self) -> dict:
         """Legacy adapter -- the ONLY place the production dict appears.
 
-        Delta_RND = <Dprj>_rnd realises the note's Poisson delta_prj
-        convention (eq. bls); the inherited ``bias_from_precomp`` /
-        ``_closure_ltr_vec`` then reproduce eqs. (bls) + (bss) verbatim.
+        Delta_RND = <Dprj>_rnd + b_halo (ss + ls): the Costanzi
+        delta_prj convention (the FIDUCIAL -- the contamination a
+        mass-selected, b_rm -> b_halo, target would suffer; eq. bls of
+        the note, with <Dprj>_halo in the denominator).  The inherited
+        ``bias_from_precomp`` / ``_closure_ltr_vec`` then reproduce
+        eqs. (bls) + (bss) verbatim.
         """
+        I2 = self.tDprj_ss + self.tDprj_ls
         return dict(lob=self.lob, zob=self.zob,
                     P1=self.Dprj_rnd,
                     I1=self.tDprj_ls,
-                    I2=self.tDprj_ss + self.tDprj_ls,
+                    I2=I2,
                     b_eff=self.b_halo,
-                    Delta_RND=self.Dprj_rnd,
+                    Delta_RND=self.Dprj_rnd + self.b_halo * I2,
                     denom=self.tDprj_ss)
 
 
@@ -250,23 +256,61 @@ class FrozenSelBias(SelBias):
     # ---------------- eq. (Dprj_rnd) / (alg_split), random channel -----
 
     def Dprj_rnd(self, lob, zob):
-        """<Dprj>_rnd = pi thob^2 int dz (dV/dz dOm) w(z, zob) <Dlam>(z).
+        """<Dprj>_rnd -- eq. (Dprj_rnd) with the FIDUCIAL (Costanzi /
+        production) exclusion convention.
 
-        eq. (Dprj_rnd) with eq. (alg_split)'s 1-D form -- the clean
-        formula of the note (no exclusion carve-out of the random
-        channel).  <Dlam>(z) is interpolated off the eq. (amp_drift)
-        coarse grid.
+        The note's eq. (alg_split) is the clean 1-D form
+        pi thob^2 int dz (dV/dz dOm) w <Dlam>(z); the fiducial
+        pipeline additionally removes the exclusion ball from the
+        random channel.  In sky variables the carve-out is the
+        incomplete transverse moment of the unweighted mass integral:
+
+            <Dprj>_rnd = 2pi sum_pm int dpi (1 +/- pi/chi_o)^2
+                         w(z(pi)) a_0(z(pi))
+                         Rex^2 [ M0(2) - M0(x_excl(pi)) ],
+            x_excl(pi) = sqrt(max(0, 1 - (pi/Rex)^2)),
+            M0(y) = int_0^y x I0(x) dx,
+
+        with I0 the unweighted analogue of eq. (Ilam).  Without the
+        sliver term this reduces to the clean formula (M0(2) is the
+        total-donation identity, = <Dlam>(zob)/2).
         """
         los = self._los(zob)
+        ml = self._frozen_ml(lob, zob)
         drift = self._drift(lob, zob)
-        thob = self._theta_lob(lob, zob)
+        chi_o = los["chi_o"]
+        Rex = R_lambda(lob) * (1.0 + zob)
 
-        zs, wz = gl_nodes(los["z_lo"], los["z_hi"], self.n_z_rnd)
-        dV = np.asarray(self.cosmo.dV_dzdOm(zs), dtype=float)
-        wwin = w_z(zs, zob)
-        Dlam_z = np.interp(zs, drift["z"], drift["Dlam"])
-        return float(np.pi * thob ** 2
-                     * np.sum(wz * dV * wwin * Dlam_z))
+        # cumulative moment M0(y) of the unweighted I0(x)
+        xg = np.linspace(0.0, 2.0, 801)
+        xb = np.broadcast_to(xg[:, None], (xg.size, ml["x_lam"].size))
+        I0x = area_overlap(xb, 1.0, ml["x_lam"]) @ ml["w_0"]
+        M0 = np.concatenate([[0.0], np.cumsum(
+            0.5 * (xg[1:] - xg[:-1])
+            * (xg[1:] * I0x[1:] + xg[:-1] * I0x[:-1]))])
+        M0_full = float(M0[-1])
+
+        total = 0.0
+        for sgn, z_lim in ((-1.0, los["z_lo"]), (+1.0, los["z_hi"])):
+            pi_max = abs(float(self.cosmo.chi(z_lim)) - chi_o)
+            segs = [(1e-8, min(Rex, pi_max), 'lin')]
+            if pi_max > Rex:
+                segs.append((Rex, pi_max, 'log'))
+            for a, b, kind in segs:
+                if kind == 'lin':
+                    p, wp = gl_nodes(a, b, 32)
+                else:
+                    lu, wu = gl_nodes(np.log(a), np.log(b), self.n_pi)
+                    p = np.exp(lu)
+                    wp = wu * p
+                zP = self._z_of_pi(los, sgn * p)
+                wwin = w_z(zP, zob)
+                a0 = np.interp(zP, drift["z"], drift["a_0"])
+                chi_fac = ((chi_o + sgn * p) / chi_o) ** 2
+                x_ex = np.sqrt(np.clip(1.0 - (p / Rex) ** 2, 0.0, None))
+                inner = Rex ** 2 * (M0_full - np.interp(x_ex, xg, M0))
+                total += float(np.sum(wp * chi_fac * wwin * a0 * inner))
+        return 2.0 * np.pi * total
 
     # ---------------- eq. (excl): exclusion zone ------------------------
 

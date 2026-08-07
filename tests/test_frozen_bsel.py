@@ -46,13 +46,15 @@ class TestIdentities:
                       + pr["b_zero"] * (pre["I2"] - pre["I1"]))
             assert budget == pytest.approx(LOB - ltr, abs=1e-9)
 
-    def test_poisson_delta_rnd_convention(self, frozen):
-        """eq. (bls): delta_prj denominator is <Dprj>_rnd."""
+    def test_costanzi_delta_rnd_convention(self, frozen):
+        """eq. (bls), fiducial: delta_prj denominator is
+        <Dprj>_halo = <Dprj>_rnd + b_halo (ss + ls)."""
         pre = frozen.bias_precompute(LOB, ZOB)
-        assert pre["Delta_RND"] == pre["P1"]
+        assert pre["Delta_RND"] == pytest.approx(
+            pre["P1"] + pre["b_eff"] * pre["I2"], rel=1e-14)
         pr = frozen.bias_from_precomp(pre, 15.0)
         assert pr["delta_prj"] == pytest.approx(
-            (LOB - 15.0) / pre["P1"] - 1.0, rel=1e-12)
+            (LOB - 15.0) / pre["Delta_RND"] - 1.0, rel=1e-12)
 
 
 class TestDataclassPaths:
@@ -97,7 +99,8 @@ class TestOperatorsRegression:
         assert ops.tDprj_ls == pytest.approx(0.22595848441, rel=1e-6)
         assert ops.tDprj_ss + ops.tDprj_ls == pytest.approx(
             0.33475094192, rel=1e-6)
-        assert ops.Dprj_rnd == pytest.approx(1.8078705363, rel=1e-6)
+        # carve-out (fiducial) random channel
+        assert ops.Dprj_rnd == pytest.approx(1.8014304871, rel=1e-6)
 
     def test_production_marginalised_api(self, sel_bias):
         """The shared plateau API also works on the production class."""

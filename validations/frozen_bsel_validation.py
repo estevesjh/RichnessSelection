@@ -5,23 +5,19 @@ Three-way comparison at the DES-Y3-like reference points:
 
   (i)   scipy.quad reference on the original (z, theta, M, lambda)
         formulation (eq. step1 / eq. Pop), adaptive in z, matched
-        inner grids, with the note's conventions: the random channel
-        carries NO exclusion carve-out (eq. Dprj_rnd is the clean
-        formula); the clustered operators carry exclusion through
-        xi_mm = 0 inside R_excl (realised as the theta_excl(z) lower
-        limit -- identical, since their integrand is proportional to
-        xi_mm).
-  (ii)  production ``SelBias`` (the FIDUCIAL method).  Note its P1
-        applies the exclusion carve-out to the random channel, so its
-        P1 error vs the doc-convention quad includes that (small,
-        known) convention difference.
-  (iii) ``FrozenSelBias`` (the frozen algorithm under test).
+        inner grids, with the FIDUCIAL (Costanzi / production)
+        conventions: exclusion enters all three operators through the
+        theta_excl(z) lower limit (for the clustered ones this is
+        identical to xi_mm = 0 inside R_excl; for the random channel
+        it is the carve-out convention).
+  (ii)  production ``SelBias`` (the FIDUCIAL method).
+  (iii) ``FrozenSelBias`` (the frozen algorithm under test) -- same
+        conventions, so residuals are pure operator numerics.
 
 Also compares the lambda_tr-marginalised plateaus b_rm_ss / b_rm_ls
-and the marginalised profile b_rm(theta) between frozen and fiducial
--- these differ BOTH by operator numerics and by the delta_prj
-convention (Poisson denominator, eq. bls) -- and asserts the budget
-identity eq. (budget) for the frozen closure.
+between frozen and fiducial (pure numerics now that the conventions
+match) and asserts the budget identity eq. (budget) for the frozen
+closure.
 
 Writes validations/cache/frozen_bsel_validation.csv.
 
@@ -77,19 +73,15 @@ def quad_truth(stack, lob, zob):
         wz_val = float(w_z(np.array([z]), zob)[0])
         if wz_val <= 0:
             return 0.0
-        if which == 'P1':
-            # eq. (Dprj_rnd): clean random channel, no exclusion cut
-            th_lo = eps_theta
-        else:
-            # exclusion via xi_mm = 0 for r < R_excl == theta_excl cut
-            cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
-                2.0 * chi_z * chi_o + 1e-30)
-            cos_excl = min(max(cos_excl, -1.0), 1.0)
-            th_lo = (np.arccos(cos_excl)
-                     if cos_excl < 1.0 - 1e-12 else eps_theta)
-            th_lo = max(th_lo, eps_theta)
-            if th_lo >= theta_max:
-                return 0.0
+        # fiducial convention: theta_excl(z) lower limit for all three
+        cos_excl = (chi_z ** 2 + chi_o ** 2 - R_excl ** 2) / (
+            2.0 * chi_z * chi_o + 1e-30)
+        cos_excl = min(max(cos_excl, -1.0), 1.0)
+        th_lo = (np.arccos(cos_excl)
+                 if cos_excl < 1.0 - 1e-12 else eps_theta)
+        th_lo = max(th_lo, eps_theta)
+        if th_lo >= theta_max:
+            return 0.0
         ths, wth = gl_nodes(th_lo, theta_max, NTH)
         th_weight = wth * 2.0 * np.pi * np.sin(ths)
         sig = 1.0 / (1.0 + np.exp(
@@ -146,11 +138,9 @@ def main():
             pre = obj.bias_precompute(lob, zob)
             errs = {k: abs(pre[k] / truth[k] - 1.0) * 100.0
                     for k in ('P1', 'I1', 'I2')}
-            note = (" (P1 incl. carve-out convention)"
-                    if name == "fiducial" else "")
             print(f"{lob:6.1f} {zob:6.3f} {name:>10} "
                   f"{errs['P1']:9.4f}% {errs['I1']:9.4f}% "
-                  f"{errs['I2']:9.4f}%{note}")
+                  f"{errs['I2']:9.4f}%")
             rows.append(dict(lob=lob, zob=zob, source=name,
                              P1=pre['P1'], I1=pre['I1'], I2=pre['I2'],
                              P1_quad=truth['P1'], I1_quad=truth['I1'],
@@ -160,8 +150,8 @@ def main():
                              I2_err_pct=errs['I2']))
 
     print("\n--- marginalised plateaus: frozen vs fiducial ---")
-    print("(differences include BOTH operator numerics and the "
-          "Poisson delta_prj convention of eq. bls)")
+    print("(same conventions on both sides: residuals are pure "
+          "operator numerics)")
     for lob, zob in POINTS:
         pf = sel.plateaus(lob, zob)
         pz = fsel.plateaus(lob, zob)
