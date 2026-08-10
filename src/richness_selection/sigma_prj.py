@@ -47,6 +47,7 @@ from .gl import gl_nodes
 from .geometry import R_lambda, theta_lambda
 from .photoz import w_z, sigma_z, zmin4zkernel, zmax4zkernel
 from .config import R_MAX_CMPCH
+from .survey_area import SurveyArea
 
 
 class SigmaPrj:
@@ -77,12 +78,19 @@ class SigmaPrj:
         ``twoD_prj_NFW`` hard truncation in Matteo's SelectionBias
         notebook.  The cl piece converges on its own (``xi_NL``
         decays fast in r); the RND piece scales with this cutoff.
+    survey_area : SurveyArea
+        Effective survey solid angle Omega(z), multiplied into the
+        z-integral's ``outer_weight``.  Defaults to ``SurveyArea()``
+        (``kind="unity"``, i.e. Omega(z)=1), reproducing this class's
+        historical behaviour exactly -- see ``survey_area.py`` module
+        docstring for why that is also the empirically-validated default.
     """
 
     def __init__(self, cosmo: Cosmology, sel_bias: SelBias,
                  nfw: NFWMiscentered,
                  n_theta_per_seg: int = 30,
-                 R_max_cMpch: float = R_MAX_CMPCH):
+                 R_max_cMpch: float = R_MAX_CMPCH,
+                 survey_area: SurveyArea = SurveyArea()):
         self.cosmo = cosmo
         self.sel_bias = sel_bias
         self.nfw = nfw
@@ -92,6 +100,7 @@ class SigmaPrj:
         self.xi_NL = sel_bias.xi_NL
         self.n_theta_per_seg = int(n_theta_per_seg)
         self.R_max_cMpch = float(R_max_cMpch)
+        self.survey_area = survey_area
 
     # ---------------- context ------------------------------------------------
 
@@ -137,8 +146,8 @@ class SigmaPrj:
         no_excl = cos_excl >= 1.0 - 1e-12
         theta_excl_z = np.where(no_excl, 0.0, theta_excl_z)
 
-        # outer weight = wzs * dV * w_z(z)
-        outer_weight = wzs * dV * wz_kern
+        # outer weight = wzs * dV * w_z(z) * Omega(z)
+        outer_weight = wzs * dV * wz_kern * self.survey_area(zs)
 
         # Per-M NFW scale radii + rho_eff from the NFW object (C++ recipe:
         # r_200 via rho_crit, rho_eff = delta_c * rho_crit * rho_mult).

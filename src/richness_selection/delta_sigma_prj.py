@@ -42,6 +42,7 @@ from .cosmology import Cosmology
 from .nfw import NFWMiscentered
 from .sel_bias import SelBias
 from .sigma_prj import SigmaPrj
+from .survey_area import SurveyArea
 
 
 # Default safety factor for the adaptive theta_max rule
@@ -80,7 +81,8 @@ class DeltaSigmaPrj(SigmaPrj):
                  nfw: NFWMiscentered,
                  n_theta_per_seg: int = 30,
                  R_max_cMpch: float | None = None,
-                 R_max_factor: float = R_MAX_FACTOR):
+                 R_max_factor: float = R_MAX_FACTOR,
+                 survey_area: SurveyArea = SurveyArea()):
         # Placeholder ``R_max_cMpch`` for the parent; we override
         # ``_theta_grid`` below to apply the adaptive rule when
         # ``self._R_max_cMpch_user is None``.
@@ -88,6 +90,7 @@ class DeltaSigmaPrj(SigmaPrj):
             cosmo=cosmo, sel_bias=sel_bias, nfw=nfw,
             n_theta_per_seg=n_theta_per_seg,
             R_max_cMpch=(30.0 if R_max_cMpch is None else R_max_cMpch),
+            survey_area=survey_area,
         )
         self._R_max_cMpch_user = (
             None if R_max_cMpch is None else float(R_max_cMpch))
