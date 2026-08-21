@@ -90,7 +90,10 @@ class SigmaPrj:
                  nfw: NFWMiscentered,
                  n_theta_per_seg: int = 30,
                  R_max_cMpch: float = R_MAX_CMPCH,
-                 survey_area: SurveyArea = SurveyArea()):
+                 survey_area: SurveyArea = SurveyArea(),
+                 tmap: str = "DA"):
+        if tmap not in ("DA", "comoving"):
+            raise ValueError(f"tmap must be 'DA' or 'comoving', got {tmap!r}")
         self.cosmo = cosmo
         self.sel_bias = sel_bias
         self.nfw = nfw
@@ -101,13 +104,19 @@ class SigmaPrj:
         self.n_theta_per_seg = int(n_theta_per_seg)
         self.R_max_cMpch = float(R_max_cMpch)
         self.survey_area = survey_area
+        # theta <-> transverse map for the kernel offset and the theta_R
+        # breakpoints: "DA" (default) R_mis = theta * D_A(zob), matching
+        # the C++ port; "comoving" R_mis = theta * chi(zob), matching the
+        # Costanzi notebook (docs/costanzi_notebook_diff.md item 4) and
+        # the repo's own geometry.py convention.
+        self.tmap = tmap
 
     # ---------------- context ------------------------------------------------
 
     def _build_zM_context(self, lob, zob) -> dict:
         g = self.grid
         chi_o = float(self.cosmo.chi(zob))
-        D_A_o = chi_o / (1.0 + zob)
+        D_A_o = chi_o if self.tmap == "comoving" else chi_o / (1.0 + zob)
         R_excl = R_lambda(lob) * (1.0 + zob)
 
         try:

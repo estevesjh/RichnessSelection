@@ -74,7 +74,8 @@ class DeltaSigmaPrj(SigmaPrj):
                  n_theta_per_seg: int = 48,
                  R_max_cMpch: float | None = None,
                  R_max_factor: float = R_MAX_FACTOR,
-                 survey_area: SurveyArea = SurveyArea()):
+                 survey_area: SurveyArea = SurveyArea(),
+                 tmap: str = "DA"):
         # n_theta_per_seg default is 48 (vs SigmaPrj's 30): the signed
         # kernel's zero crossing at theta ~ theta_R is a C0 kink
         # mid-segment, and 48 nodes hold the smallest-R (theta_R near
@@ -83,7 +84,7 @@ class DeltaSigmaPrj(SigmaPrj):
             cosmo=cosmo, sel_bias=sel_bias, nfw=nfw,
             n_theta_per_seg=n_theta_per_seg,
             R_max_cMpch=(R_MAX_CMPCH if R_max_cMpch is None else R_max_cMpch),
-            survey_area=survey_area,
+            survey_area=survey_area, tmap=tmap,
         )
         self._R_max_cMpch_user = (
             None if R_max_cMpch is None else float(R_max_cMpch))

@@ -121,3 +121,20 @@ def test_delta_sigma_grid_signed_units(nfw):
     ds_neg = nfw.delta_sigma_grid(
         np.array([0.1 * rs]), np.array([5.0 * rs]), M_TEST, Z_TEST)[0]
     assert ds_neg[0] < 0.0
+
+
+def test_mean_field_cancellation(nfw):
+    """int_0^X gs(x0 | x_mis) 2 pi x_mis dx_mis -> 0: a uniform halo
+    population is a uniform sheet, and the cancellation is carried by
+    the negative lobe (clamping it breaks this -- the old ln-table
+    failure mode)."""
+    x0 = 3.0
+    xm = np.geomspace(0.02, 60.0, 500)
+    gs = nfw._dsig_spl.ev(
+        np.clip(np.log(xm), nfw._lnxmis_lo, nfw._lnxmis_hi),
+        np.full(xm.size, np.log(x0)))
+    I = np.trapezoid(gs * 2.0 * np.pi * xm, xm)
+    I_abs = np.trapezoid(np.abs(gs * 2.0 * np.pi * xm), xm)
+    assert abs(I) < 0.01 * I_abs, (
+        f"mean-field residual {I/I_abs:+.4f} of |integrand| -- the "
+        f"negative lobe is not cancelling the interior mass")
