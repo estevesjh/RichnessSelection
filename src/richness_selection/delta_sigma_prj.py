@@ -8,32 +8,34 @@ Evaluates the cluster--lensing observable
           [1 + b(M, z) b_sel(theta) xi_NL(|Delta r|, zob)]
         * DeltaSigma_mis(R | M, z, R_mis = theta * D_A(zob))
 
-which is obtained from the ``SigmaPrj`` Eq. 13 kernel by swapping
-``Sigma_mis`` for its radial excess ``DeltaSigma_mis = bar_Sigma(<R) -
-Sigma(R)``.  The argument is developed in
-``docs/delta_sigma_prj_derivation.tex``: the radial-average-and-
-subtraction functional is linear in R only, so it commutes with the
-(theta, z, M) integrals, and the only change from the ``SigmaPrj``
-pipeline is the underlying NFW lookup (``_dsig_spl`` vs ``_spl`` in
-``NFWMiscentered``).
+obtained from the ``SigmaPrj`` Eq. 13 kernel by swapping ``Sigma_mis``
+for its radial excess ``DeltaSigma_mis = bar-Sigma_mis(<R) -
+Sigma_mis(R)``: the excess functional is linear in R only, so it
+commutes with the (theta, z, M) integrals, and the only change from
+the ``SigmaPrj`` pipeline is the underlying kernel lookup.
+
+The kernel is the *signed* miscentered excess reconstructed by
+``NFWMiscentered`` from the positive-definite Sigma table (see
+``nfw.py``: the shipped ``log_deltasigma_single`` table stored
+``ln g`` and floored the negative branch ``DeltaSigma_mis(R < R_mis)``
+to ~0, which inflated the two-halo cl piece by ~1.5x and broke the
+uniform-field rnd cancellation).
 
 Defaults
 --------
 
-- By default the class returns the ``cl+LSS`` piece, matching the
-  convention of ``SigmaPrj`` (the ``rnd`` / uniform-background term
-  vanishes in the full-aperture limit and is a boundary-truncation
-  artefact; see ``docs/delta_sigma_prj_derivation.tex`` Section 2).
+- Default return is the ``cl+LSS`` piece, matching ``SigmaPrj``.  The
+  rnd (uniform mean-field) piece does not belong in the two-halo
+  observable -- a uniform sheet has DeltaSigma = 0 exactly -- and with
+  the signed kernel the computed rnd is numerically consistent with
+  zero (finite-aperture residual only).
 
-- The theta-upper limit is set adaptively from the requested R-grid:
-  ``R_max_cMpch = R_max_factor * max(R)``, with ``R_max_factor = 3``
-  (``docs/delta_sigma_prj_derivation.tex`` Section 3).  The rationale
-  is that DeltaSigma_mis(R | R_mis) has compact support around
-  R_mis ~ R and dies for R_mis >> R, unlike Sigma_mis which plateaus
-  at a constant in R.  The ``SigmaPrj`` legacy ``R_max = 30 cMpc/h``
-  is therefore unnecessarily generous here.
-
-  Pass ``R_max_cMpch`` explicitly to override the adaptive rule.
+- theta-upper bound: ``max(R_MAX_CMPCH, R_max_factor * max(R))``.
+  Unlike the old (sign-broken) kernel, the signed excess has a
+  negative branch extending to all ``R_mis > R``, so the aperture must
+  cover the xi_NL support, not just ``theta_R``; the legacy 30 cMpc/h
+  floor does that, and the ``R_max_factor * max(R)`` term extends it
+  when large radii are requested.  Pass ``R_max_cMpch`` to override.
 """
 from __future__ import annotations
 import numpy as np
@@ -43,10 +45,10 @@ from .nfw import NFWMiscentered
 from .sel_bias import SelBias
 from .sigma_prj import SigmaPrj
 from .survey_area import SurveyArea
+from .config import R_MAX_CMPCH
 
 
-# Default safety factor for the adaptive theta_max rule
-# (recipe in docs/delta_sigma_prj_derivation.tex Section 3).
+# Multiplier on max(R) for the theta-grid upper bound.
 R_MAX_FACTOR = 3.0
 
 
@@ -55,41 +57,32 @@ class DeltaSigmaPrj(SigmaPrj):
 
     Subclasses ``SigmaPrj`` and overrides two hooks:
 
-    - ``_kernel_closure`` substitutes ``NFWMiscentered._dsig_spl``
-      for ``_spl`` inside the per-theta (NM, NR) lookup.  Same C++
-      ``2 * r_s * rho_eff * 1e-12`` prefactor (both tables are in
-      the C++ kernel's natural units).
+    - ``_kernel_closure`` substitutes the signed ``DeltaSigma_mis``
+      lookup (``NFWMiscentered._dsig_spl``, linear-space values) for
+      the ``Sigma_mis`` one.  Same C++ ``2 * r_s * rho_eff * 1e-12``
+      prefactor.
 
-    - ``R_max_cMpch`` defaults to ``R_max_factor * max(R_grid)`` when
-      ``None`` is passed; otherwise forwards to ``SigmaPrj``.  The
-      default ``R_max_factor`` is ``3.0`` (see module docstring).
+    - ``R_max_cMpch`` defaults to ``max(R_MAX_CMPCH,
+      R_max_factor * max(R))`` at call time (see module docstring).
 
     The theta-grid, z- and M-integration, b_sel evaluation, xi_NL
     exclusion, and outer-loop structure are inherited unchanged.
-
-    Parameters
-    ----------
-    R_max_cMpch : float or None
-        If ``None`` (default), use the adaptive rule
-        ``R_max_factor * max(R)`` at call time.  Otherwise, forward
-        to ``SigmaPrj`` as a fixed upper bound.
-    R_max_factor : float
-        Multiplier on ``max(R)`` for the adaptive rule.  Default 3.0.
     """
 
     def __init__(self, cosmo: Cosmology, sel_bias: SelBias,
                  nfw: NFWMiscentered,
-                 n_theta_per_seg: int = 30,
+                 n_theta_per_seg: int = 48,
                  R_max_cMpch: float | None = None,
                  R_max_factor: float = R_MAX_FACTOR,
                  survey_area: SurveyArea = SurveyArea()):
-        # Placeholder ``R_max_cMpch`` for the parent; we override
-        # ``_theta_grid`` below to apply the adaptive rule when
-        # ``self._R_max_cMpch_user is None``.
+        # n_theta_per_seg default is 48 (vs SigmaPrj's 30): the signed
+        # kernel's zero crossing at theta ~ theta_R is a C0 kink
+        # mid-segment, and 48 nodes hold the smallest-R (theta_R near
+        # theta_excl) segment to < 0.3% vs a 120-node reference.
         super().__init__(
             cosmo=cosmo, sel_bias=sel_bias, nfw=nfw,
             n_theta_per_seg=n_theta_per_seg,
-            R_max_cMpch=(30.0 if R_max_cMpch is None else R_max_cMpch),
+            R_max_cMpch=(R_MAX_CMPCH if R_max_cMpch is None else R_max_cMpch),
             survey_area=survey_area,
         )
         self._R_max_cMpch_user = (
@@ -99,7 +92,11 @@ class DeltaSigmaPrj(SigmaPrj):
     # ---------------- kernel override ---------------------------------------
 
     def _kernel_closure(self, R, ctx):
-        """DeltaSigma_mis lookup in the C++ convention [Msun/h / pc^2]."""
+        """Signed DeltaSigma_mis lookup [Msun/h / pc^2].
+
+        ``_dsig_spl`` holds linear-space signed values (no exp); both
+        axes clipped to the stored ranges.
+        """
         rs_M = ctx["rs_M"]; rho_eff = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
         _dsig_spl = self.nfw._dsig_spl
         _lnx_lo = self.nfw._lnx_lo; _lnx_hi = self.nfw._lnx_hi
@@ -114,19 +111,19 @@ class DeltaSigmaPrj(SigmaPrj):
             lnxmis = np.clip(lnxmis, _lnxmis_lo, _lnxmis_hi)
             out = np.empty_like(ln_R)
             for iM in range(rs_M.size):
-                out[iM] = prefac_M[iM] * np.exp(
-                    _dsig_spl(lnxmis[iM:iM + 1], ln_R[iM])).ravel()
+                out[iM] = prefac_M[iM] * _dsig_spl(
+                    lnxmis[iM:iM + 1], ln_R[iM]).ravel()
             return out
         return kernel
 
     # ---------------- adaptive theta_max ------------------------------------
 
     def _theta_grid(self, lob, zob, R_vec, ctx):
-        """Inherit the parent grid recipe with an adaptive ``R_max_cMpch``
-        when the user did not pin it.
-        """
-        if self._R_max_cMpch_user is None:
-            self.R_max_cMpch = self.R_max_factor * float(np.max(R_vec))
-        else:
+        """Inherit the parent grid recipe with the floored-adaptive
+        ``R_max_cMpch`` when the user did not pin it."""
+        if self._R_max_cMpch_user is not None:
             self.R_max_cMpch = self._R_max_cMpch_user
+        else:
+            self.R_max_cMpch = max(
+                R_MAX_CMPCH, self.R_max_factor * float(np.max(R_vec)))
         return super()._theta_grid(lob, zob, R_vec, ctx)

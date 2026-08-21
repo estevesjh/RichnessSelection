@@ -11,6 +11,7 @@ from .frozen_bsel import FrozenSelBias, FrozenOperators
 from .frozen_delta_sigma_prj import FrozenDeltaSigmaPrj
 from .sigma_prj import SigmaPrj
 from .delta_sigma_prj import DeltaSigmaPrj
+from .two_halo import TwoHalo
 from .survey_area import SurveyArea
 from .config import DEFAULT_GRID
 from .des_y3 import Y3_LAM_BINS, Y3_Z_BINS, Y3_LAM_MEAN, Y3_Z_MEAN
@@ -34,6 +35,7 @@ __all__ = [
     "MarginalisedBias",
     "SigmaPrj",
     "DeltaSigmaPrj",
+    "TwoHalo",
     "SurveyArea",
     "DEFAULT_GRID",
     "Y3_LAM_BINS",

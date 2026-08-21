@@ -2,9 +2,10 @@
 Sec. "Extension: frozen physics for <DeltaSigma_prj>".
 
 ``FrozenDeltaSigmaPrj`` subclasses ``DeltaSigmaPrj`` and overrides only
-``__call__``: the theta-grid, the (z, M) context, the kernel closure
-(NFW lookup) and the marginalised b_rm(theta) are all inherited, so any
-residual against production is purely the Sec.-4 reduction.
+``__call__``: the theta-grid, the (z, M) context, the kernel (signed
+``DeltaSigma_mis`` lookup) and the marginalised b_rm(theta) are all
+inherited, so any residual against production is purely the Sec.-4
+reduction.
 
 The reduction, per the note:
 
@@ -25,7 +26,7 @@ The reduction, per the note:
 
 Cost: the O(N_M x N_z) inner block per theta-node becomes one
 O(N_z)-vectorised Psi plus an O(N_M) matvec; the remaining per-node
-cost is the shared NFW kernel lookup.
+cost is the shared kernel lookup.
 """
 from __future__ import annotations
 
@@ -40,8 +41,8 @@ class FrozenDeltaSigmaPrj(DeltaSigmaPrj):
     """DeltaSigmaPrj with the frozen-physics (z, M) factorisation."""
 
     def _kernel_stack(self, R, thetas, ctx):
-        """(Nth, NM, NR) DeltaSigma_mis stack in one grid-spline call
-        per M-row.
+        """(Nth, NM, NR) signed DeltaSigma_mis stack in one grid-spline
+        call per M-row.
 
         For fixed M, lnxmis(theta) = ln(theta D_A / r_s) is monotonic in
         theta, so the whole (theta, R) plane is a tensor-grid evaluation
@@ -49,10 +50,10 @@ class FrozenDeltaSigmaPrj(DeltaSigmaPrj):
         parent closure's NM calls per theta-node.  Clipping duplicates
         are routed through np.unique to keep the grid axis strictly
         increasing.  Numerically identical to the parent closure (same
-        spline, same clipping).
+        spline, same clipping; linear-space values, no exp).
         """
         rs_M = ctx["rs_M"]; rho_eff = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
-        _spl = self.nfw._dsig_spl
+        _dsig_spl = self.nfw._dsig_spl
         _lnx_lo = self.nfw._lnx_lo; _lnx_hi = self.nfw._lnx_hi
         _lnxmis_lo = self.nfw._lnxmis_lo; _lnxmis_hi = self.nfw._lnxmis_hi
         ln_R = np.clip(np.log(R)[None, :] - np.log(rs_M)[:, None],
@@ -65,8 +66,8 @@ class FrozenDeltaSigmaPrj(DeltaSigmaPrj):
             lnxmis = np.clip(ln_theta_DA - np.log(rs_M[iM]),
                              _lnxmis_lo, _lnxmis_hi)
             vals, inv = np.unique(lnxmis, return_inverse=True)
-            grid = _spl(vals, ln_R[iM])                      # (Nvals, NR)
-            out[:, iM, :] = prefac_M[iM] * np.exp(grid[inv])
+            grid = _dsig_spl(vals, ln_R[iM])                 # (Nvals, NR)
+            out[:, iM, :] = prefac_M[iM] * grid[inv]
         return out
 
     def __call__(self, R, lob, zob, *, return_decomposition: bool = False):

@@ -132,11 +132,11 @@ def _quad_one(args):
     def DS_mis_over_M(theta):
         R_mis = theta * D_A_o
         lnxmis = np.clip(np.log(R_mis / rs), _lnxmis_lo, _lnxmis_hi)
-        lnG = np.empty(Ms.size)
+        gs = np.empty(Ms.size)
         for i in range(Ms.size):
-            lnG[i] = float(_dsig_spl(
+            gs[i] = float(_dsig_spl(
                 np.array([lnxmis[i]]), np.array([lnx_R[i]])).ravel()[0])
-        return prefac_M * np.exp(lnG)
+        return prefac_M * gs   # signed reconstruction: linear-space values
 
     def inner_integrand(theta, z, chi_z):
         if theta <= 0.0:
