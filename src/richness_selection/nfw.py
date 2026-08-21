@@ -3,8 +3,13 @@
 Tables (loaded once at construction):
     table_1000_1e-03_5e+03_single_logx.txt           999 pts   ln(R/R_s)
     table_1000_1e-03_5e+03_single_logxmis.txt        249 pts   ln(R_mis/R_s)
-    table_1000_1e-03_5e+03_log_sigma_single.txt      250 x 1000  ln f(x, x_mis)
-    table_1000_1e-03_5e+03_log_deltasigma_single.txt 250 x 1000  ln g(x, x_mis)
+    table_1000_1e-03_5e+03_log_sigma_single.txt        250 x 1000  ln f(x, x_mis)
+    table_1000_1e-03_5e+03_deltasigma_signed_single.txt 250 x 1000  SIGNED g(x, x_mis)
+
+The DeltaSigma table is SIGNED/linear (not log): DeltaSigma_mis(R|R_mis) is
+negative for R_mis > R.  The legacy log_deltasigma table was exp()'d on read
+(forced >= 0) and zeroed that negative lobe; see
+data/nfw_off_center/make_signed_deltasigma_table.py.
 
 C++ convention (authoritative: y3_cluster_cpp ``NFW_SIGMA_MIS`` and
 ``NFW_DSIGMA_MIS``)
@@ -79,12 +84,18 @@ class NFWMiscentered:
             table_dir, "table_1000_1e-03_5e+03_single_logxmis.txt"))
         log_sigma = np.loadtxt(os.path.join(
             table_dir, "table_1000_1e-03_5e+03_log_sigma_single.txt"))
-        log_dsigma = np.loadtxt(os.path.join(
-            table_dir, "table_1000_1e-03_5e+03_log_deltasigma_single.txt"))
-        if log_dsigma.shape != log_sigma.shape:
+        # SIGNED (linear) DeltaSigma table -- see
+        # data/nfw_off_center/make_signed_deltasigma_table.py.  Replaces the
+        # legacy log_deltasigma table, which was exp()'d on read and so could
+        # only be >= 0; the true DeltaSigma_mis is NEGATIVE for R_mis > R
+        # (halo center outside the aperture), and zeroing that lobe broke the
+        # projection mean-field cancellation.  Stored signed, read WITHOUT exp.
+        dsigma = np.loadtxt(os.path.join(
+            table_dir, "table_1000_1e-03_5e+03_deltasigma_signed_single.txt"))
+        if dsigma.shape != log_sigma.shape:
             raise ValueError(
-                "log_deltasigma_single table shape "
-                f"{log_dsigma.shape} != log_sigma_single shape "
+                "deltasigma_signed_single table shape "
+                f"{dsigma.shape} != log_sigma_single shape "
                 f"{log_sigma.shape}; axes must match")
 
         lnxmis = self._log_xmis[: log_sigma.shape[0]]
@@ -93,7 +104,7 @@ class NFWMiscentered:
         self._lnxmis_lo, self._lnxmis_hi = lnxmis[0], lnxmis[-1]
         self._spl = RectBivariateSpline(lnxmis, lnx, log_sigma, kx=1, ky=1)
         self._dsig_spl = RectBivariateSpline(
-            lnxmis, lnx, log_dsigma, kx=1, ky=1)
+            lnxmis, lnx, dsigma, kx=1, ky=1)   # signed values (no log)
 
     def _rs_and_rhos(self, M, z):
         """``(r_s, rho_eff)`` in the C++ convention.
@@ -134,6 +145,6 @@ class NFWMiscentered:
         lnx = np.clip(np.log(R_arr / rs), self._lnx_lo, self._lnx_hi)
         lnxmis = np.clip(np.log(R_mis_arr / rs),
                          self._lnxmis_lo, self._lnxmis_hi)
-        lnG = self._dsig_spl(lnxmis, lnx)
+        G = self._dsig_spl(lnxmis, lnx)   # signed dimensionless DeltaSigma_mis
         norm = 2.0 * rs * rho_eff
-        return norm * np.exp(lnG) * CMPCH2_TO_PC2
+        return norm * G * CMPCH2_TO_PC2   # NO exp: table is signed/linear
