@@ -44,10 +44,14 @@ def main():
     stack = build_stack()
     cosmo, sb, nfw = stack["cosmo"], stack["sb"], stack["nfw"]
 
-    # theta_max = 10 deg: R_max = 0.1745 rad * D_A_o(zob)
-    D_A_o = float(cosmo.chi(ZOB)) / (1.0 + ZOB)
-    sp = SigmaPrj(cosmo, sb, nfw,
-                  R_max_cMpch=np.deg2rad(10.0) * D_A_o)
+    # closure mode: comoving map, mass-conserving truncated NFW,
+    # unresolved counter-term.  theta_max = 10 deg.
+    from richness_selection import NFWMiscentered
+    from _common import NFW_TABLE_DIR
+    nfw_m = NFWMiscentered(cosmo, table_dir=NFW_TABLE_DIR, kind="m200m")
+    chi_o_ = float(cosmo.chi(ZOB))
+    sp = SigmaPrj(cosmo, sb, nfw_m, tmap="comoving", closure=True,
+                  R_max_cMpch=np.deg2rad(10.0) * chi_o_)
     th2h = TwoHalo(cosmo, sb)
     T = float(th2h.sigma(np.array([R_FIX]), LOB, ZOB)[0])   # target norm
 
@@ -56,7 +60,7 @@ def main():
     pre = sb.bias_precompute(LOB, ZOB)
     thetas, w_theta, info = sp._theta_grid(LOB, ZOB, R, ctx)
     bsel_vals = sp._bsel_at(thetas, LOB, ZOB, pre)
-    ctx["Sigma_mis_per_theta"] = sp._kernel_closure(R, ctx)
+    ctx["Sigma_mis_per_theta"] = sp._kernel_closure_trunc(R, ctx)
 
     chi_o = ctx["chi_o"]
     M_weight = ctx["M_weight"]
@@ -78,10 +82,16 @@ def main():
         per_z = (wM_Sig @ (n_mz * bM_mz)) * outer_weight * xi_v
         dI[it] = wth * 2.0 * np.pi * np.sin(th) * bsel_vals[it] * per_z.sum()
 
+    # counter-term: point-mass collapse at theta_R (comoving map)
+    bsel_fn = sb.marginalised_bias(LOB, ZOB, precomp=pre)
+    cl_c, _ = sp._closure_counter(R, ZOB, ctx, bsel_fn)
+    theta_R_probe = float(R[0] / ctx["chi_o"])
+
     order = np.argsort(thetas)
     th_o, dI_o, w_o = thetas[order], dI[order], w_theta[order]
     th_deg = np.rad2deg(th_o)
     running = np.cumsum(dI_o) / T
+    running += np.where(th_o >= theta_R_probe, float(cl_c[0]) / T, 0.0)
     dens_lnth = dI_o / w_o * th_o / T          # dI/dln(theta) / T
     print(f"[check] I(<theta_max_full) / T = {running[-1]:.4f}")
 
@@ -129,7 +139,7 @@ def main():
     ax.tick_params(which="both", direction="in", right=True)
     ax.grid(alpha=0.15)
     ax.set_title(
-        rf"$\Sigma^{{\rm prj}}_{{\rm cl}}$ convergence at $R={R_FIX:.0f}$ cMpc/$h$"
+        rf"Closure-mode $\Sigma^{{\rm prj}}_{{\rm cl}}$ convergence at $R={R_FIX:.0f}$ cMpc/$h$"
         rf"  ($\lambda^{{\rm ob}}={LOB:.0f}$, $z^{{\rm ob}}={ZOB}$)",
         fontsize=11)
     fig.tight_layout()

@@ -1,4 +1,14 @@
-"""Sum-rule hypothesis test: plateau(M_low) of the fixed cl integral.
+"""Sum-rule test: plateau(M_low) of the cl integral in CLOSURE mode.
+
+Closure mode (SigmaPrj(closure=True, tmap="comoving") with the
+mass-conserving kind="m200m" NFW) evaluates the full Eq.-13 integrand
+(1 + b_sel b xi) Sigma_mis over the COMPLETE matter content: resolved
+halos above M_low with the truncated NFW, plus the sub-cut matter as a
+smooth sheet with b_u = (rho_m - int n b M)/(rho_m - int n M).  The
+amplitude must therefore be independent of M_low and equal to
+rho_m b_sel xi -- the counter-term absorbs the cut.
+
+Legacy header of the pre-closure diagnostic:
 
 Hypothesis: the ~0.67 amplitude deficit of Sigma_prj_cl against the
 traditional two-halo target is the neighbour mass-budget sum rule
@@ -94,10 +104,6 @@ def main():
     rho_m = cosmo.Om0 * RHO_CRIT_0
     T = float(TwoHalo(cosmo, sb).sigma(np.array([R_FIX]), LOB, ZOB)[0])
 
-    sp = SigmaPrj(cosmo, sb, nfw)
-    # denser mass grid for the wide sweeps
-    sp.grid = replace(sp.grid, NM=48)
-
     # analytic sum rule F(M_low) at zob
     lnM_f = np.linspace(np.log(1e10), np.log(10.0 ** sb.ln_M_max_log10), 800)
     M_f = np.exp(lnM_f)
@@ -106,20 +112,24 @@ def main():
         np.trapezoid(np.where(M_f >= Ml, nbM, 0.0), lnM_f) / rho_m
         for Ml in M_LOW_GRID])
 
+    from richness_selection import NFWMiscentered
+    from _common import NFW_TABLE_DIR
+    nfw_m = NFWMiscentered(cosmo, table_dir=NFW_TABLE_DIR, kind="m200m")
     plateaus = np.empty(M_LOW_GRID.size)
     saved_min = sb.min_mass4integral
     for i, Ml in enumerate(M_LOW_GRID):
         sb.min_mass4integral = Ml
-        plateaus[i] = fixed_cl_over_T(sp, sb, LOB, ZOB, R_FIX, T)
-        print(f"[sweep] M_low = {Ml:.1e}:  plateau = {plateaus[i]:.4f}"
-              f"   sum rule F = {F_of_Mlow[i]:.4f}")
+        spc = SigmaPrj(cosmo, sb, nfw_m, tmap="comoving", closure=True)
+        plateaus[i] = float(spc(np.array([R_FIX]), LOB, ZOB)[0]) / T
+        print(f"[sweep] M_low = {Ml:.1e}:  closure cl/T = {plateaus[i]:.4f}"
+              f"   resolved sum rule F = {F_of_Mlow[i]:.4f}")
     sb.min_mass4integral = saved_min
 
     fig, ax = plt.subplots(figsize=(7.0, 4.6))
     ax.semilogx(M_LOW_GRID, F_of_Mlow, color=C_RULE, lw=2, ls="--",
                 label=r"sum rule  $\int_{M_{\rm low}} n\,b\,M\,dM/\rho_m$")
     ax.semilogx(M_LOW_GRID, plateaus, color=C_PIPE, lw=2, marker="o",
-                ms=6, label=r"fixed pipeline  $\Sigma_{\rm cl}(R{=}10)/T$")
+                ms=6, label=r"closure mode  $\Sigma_{\rm cl}(R{=}10)/T$")
     ax.axhline(1.0, color="k", lw=1.2, ls=":")
     ax.annotate("target = 1", xy=(M_LOW_GRID[0] * 1.2, 1.015), fontsize=9)
     ax.axvline(1e13, color=C_MARK, lw=1, ls=":")
@@ -134,8 +144,7 @@ def main():
     ax.tick_params(which="both", direction="in", top=True, right=True)
     ax.grid(alpha=0.15)
     ax.set_title(
-        rf"Sum-rule test: fixed kernel (comoving map, mass-normalised,"
-        rf" $r_{{200}}$-truncated), $R={R_FIX:.0f}$ cMpc/$h$",
+        f"Closure mode: truncated NFW + counter-term, R={R_FIX:.0f} cMpc/h",
         fontsize=10)
     fig.tight_layout()
 
