@@ -91,9 +91,14 @@ class SigmaPrj:
                  n_theta_per_seg: int = 30,
                  R_max_cMpch: float = R_MAX_CMPCH,
                  survey_area: SurveyArea = SurveyArea(),
-                 tmap: str = "DA"):
+                 tmap: str = "DA",
+                 closure: bool = False):
         if tmap not in ("DA", "comoving"):
             raise ValueError(f"tmap must be 'DA' or 'comoving', got {tmap!r}")
+        if closure and tmap != "comoving":
+            raise ValueError("closure=True requires tmap='comoving' (the "
+                             "point-mass collapse of the counter-term is "
+                             "exact only in the comoving map)")
         self.cosmo = cosmo
         self.sel_bias = sel_bias
         self.nfw = nfw
@@ -110,6 +115,15 @@ class SigmaPrj:
         # Costanzi notebook (docs/costanzi_notebook_diff.md item 4) and
         # the repo's own geometry.py convention.
         self.tmap = tmap
+        # closure: halo-model sum-rule closure.  Resolved neighbours use
+        # the mass-conserving NFW hard-truncated at r_t = c r_s (each
+        # deposits exactly M), and the unresolved mass below the mass
+        # cut enters as a smooth sheet with density
+        # rho_u(z) = rho_m - int n M dM and bias
+        # b_u(z) = (rho_m - int n b M dM) / rho_u (exact Tinker
+        # consistency assumed for the complement).  The cl amplitude
+        # then sums to rho_m * b_sel * xi by construction.
+        self.closure = bool(closure)
 
     # ---------------- context ------------------------------------------------
 
@@ -169,7 +183,7 @@ class SigmaPrj:
             Ms=Ms, M_weight=M_weight, n_mz=n_mz, bM_mz=bM_mz,
             theta_excl_z=theta_excl_z,
             chi_o=chi_o, D_A_o=D_A_o, R_excl=R_excl,
-            rs_M=rs_M, rho_s=rho_eff_M,
+            rs_M=rs_M, rho_s=rho_eff_M, zob=zob,
         )
 
     # ---------------- theta grid ---------------------------------------------
@@ -302,6 +316,81 @@ class SigmaPrj:
             return out
         return kernel
 
+    def _kernel_closure_trunc(self, R, ctx):
+        """Truncated-NFW kernel for closure mode: the phi-averaged
+        miscentered column of the profile hard-cut at r_t = c r_s
+        (``nfw.truncated_sigma_kernel``), so each resolved neighbour
+        deposits exactly its mass M."""
+        from numpy.polynomial.legendre import leggauss
+        from .nfw import truncated_sigma_kernel
+        rs_M = ctx["rs_M"]; rho_eff = ctx["rho_s"]; D_A_o = ctx["D_A_o"]
+        rho_eff = np.broadcast_to(np.atleast_1d(rho_eff), rs_M.shape)
+        prefac_M = 2.0 * rs_M * rho_eff * 1.0e-12
+        # per-M concentration (m200m kind: Duffy-like; cpp kind: fixed)
+        if getattr(self.nfw, "kind", "cpp") == "m200m":
+            Ms = ctx["Ms"]
+            # must match _rs_and_rhos exactly: r_t = c * r_s = r_200m
+            c_M = (10.14 * (Ms / 2.0e12) ** -0.081
+                   * (1.0 + ctx["zob"]) ** -1.01)
+        else:
+            c_M = np.full(rs_M.shape, self.nfw.c)
+        tables = [truncated_sigma_kernel(float(c)) for c in c_M]
+
+        s, w = leggauss(128)
+        s = 0.5 * (s + 1.0)
+        wt = (0.5 * w * 2.0 * np.pi * s) / np.pi     # phi-average weights
+        t = np.pi * s * s
+        sin2 = np.sin(t / 2.0) ** 2
+        x_R = R[None, :] / rs_M[:, None]             # (NM, NR)
+
+        def kernel(theta):
+            R_mis = theta * D_A_o
+            out = np.empty((rs_M.size, R.size))
+            for iM in range(rs_M.size):
+                xm = R_mis / rs_M[iM]
+                u = np.sqrt((x_R[iM][:, None] - xm) ** 2
+                            + 4.0 * x_R[iM][:, None] * xm * sin2[None, :])
+                lnxg, ftg = tables[iM]
+                f_u = np.interp(np.log(np.maximum(u, 1e-30)), lnxg, ftg,
+                                left=ftg[0], right=0.0)
+                out[iM] = prefac_M[iM] * (f_u @ wt)
+            return out
+        return kernel
+
+    def _closure_counter(self, R, zob, ctx, bsel_fn):
+        """Unresolved-mass counter-term (smooth sheet, point-mass
+        collapse in the comoving map): per z,
+        rho_u b_u b_sel(theta_R) xi(r3d) with the pipeline's LoS
+        weights and exclusion.  Returns (cl_counter, rnd_counter)."""
+        from .nfw import RHO_CRIT_0
+        chi_z = ctx["chi_z"]; chi_o = ctx["chi_o"]
+        outer_weight = ctx["outer_weight"]
+        theta_excl_z = ctx["theta_excl_z"]
+        M_weight = ctx["M_weight"]
+        n_mz = ctx["n_mz"]; bM_mz = ctx["bM_mz"]
+        rho_m = float(self.cosmo.Om0) * RHO_CRIT_0
+        Ms = ctx["Ms"]
+        int_nM = (M_weight * Ms) @ n_mz              # (Nz,)  int n M dM
+        int_nbM = (M_weight * Ms) @ (n_mz * bM_mz)   # (Nz,)
+        rho_u = np.maximum(rho_m - int_nM, 0.0)
+        b_u = np.where(rho_u > 0.0,
+                       (rho_m - int_nbM) / np.maximum(rho_u, 1e-30), 0.0)
+
+        theta_R = R / chi_o                          # comoving map
+        bsel_R = bsel_fn(theta_R)
+        cl = np.empty_like(R)
+        rnd = np.empty_like(R)
+        w_geo = outer_weight / chi_z ** 2 * 1.0e-12  # sheet -> Msun/h/pc^2
+        for i, (Rv, th) in enumerate(zip(R, theta_R)):
+            dchi = np.sqrt(np.maximum(
+                chi_z ** 2 + chi_o ** 2
+                - 2.0 * chi_z * chi_o * np.cos(th), 0.0))
+            xiv = self.xi_NL(dchi, zob)
+            xiv = np.where(th > theta_excl_z, xiv, 0.0)
+            cl[i] = bsel_R[i] * np.sum(w_geo * rho_u * b_u * xiv)
+            rnd[i] = np.sum(w_geo * rho_u)
+        return cl, rnd
+
     def __call__(self, R, lob, zob, *, return_decomposition: bool = False):
         R = np.atleast_1d(R).astype(float)
         ctx = self._build_zM_context(lob, zob)
@@ -309,7 +398,9 @@ class SigmaPrj:
         thetas, w_theta, th_info = self._theta_grid(lob, zob, R, ctx)
         bsel_vals = self._bsel_at(thetas, lob, zob, pre)
 
-        ctx["Sigma_mis_per_theta"] = self._kernel_closure(R, ctx)
+        ctx["Sigma_mis_per_theta"] = (
+            self._kernel_closure_trunc(R, ctx) if self.closure
+            else self._kernel_closure(R, ctx))
 
         out_rnd = np.zeros_like(R)
         out_cl = np.zeros_like(R)
@@ -318,6 +409,12 @@ class SigmaPrj:
             prefac = wth * 2.0 * np.pi * np.sin(th)
             out_rnd += prefac * N_rnd
             out_cl += prefac * bsel_vals[it] * N_cl
+
+        if self.closure:
+            bsel_fn = self.sel_bias.marginalised_bias(lob, zob, precomp=pre)
+            cl_c, rnd_c = self._closure_counter(R, zob, ctx, bsel_fn)
+            out_cl += cl_c
+            out_rnd += rnd_c
 
         if return_decomposition:
             return dict(

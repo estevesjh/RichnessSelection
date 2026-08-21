@@ -110,3 +110,23 @@ def test_theta_grid_breakpoints_include_each_R(sp):
         assert np.any(np.abs(brk - tR) / tR < 1e-6), (
             f"theta_R = {tR:.3e} missing from breakpoints {brk}"
         )
+
+
+def test_closure_sums_to_one(cosmo, sel_bias, nfw):
+    """Halo-model closure: with the mass-conserving truncated NFW
+    (kind='m200m'), the comoving map, and the unresolved-mass
+    counter-term, the cl amplitude must equal rho_m * b_sel * xi
+    (the TwoHalo cylinder) at two-halo scales -- the sum rule the
+    default (C++-parity) conventions violate by ~0.65x.
+    """
+    import os
+    from richness_selection import TwoHalo, NFWMiscentered
+    table_dir = os.environ.get("RICHNESS_SELECTION_NFW_DIR")
+    nfw_m = (NFWMiscentered(cosmo, table_dir=table_dir, kind="m200m")
+             if table_dir else NFWMiscentered(cosmo, kind="m200m"))
+    sp = SigmaPrj(cosmo, sel_bias, nfw_m, tmap="comoving", closure=True)
+    R = np.array([5.0, 10.0, 20.0])
+    T = TwoHalo(cosmo, sel_bias).sigma(R, 20.0, 0.5)
+    ratio = sp(R, 20.0, 0.5) / T
+    assert (np.abs(ratio - 1.0) < 0.05).all(), (
+        f"closure cl/TwoHalo = {ratio} -- sum rule violated")

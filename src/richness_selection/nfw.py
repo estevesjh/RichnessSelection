@@ -108,6 +108,34 @@ def wright_brainerd_f(x, eps=_WB_SERIES_WINDOW):
     return res
 
 
+def truncated_sigma_kernel(c, n_x: int = 1500, n_los: int = 96):
+    """Projected NFW hard-truncated at the 3D halo boundary r_t = c r_s.
+
+    Returns ``(lnx_grid, ft_grid)`` with ``Sigma_t = 2 r_s rho_s f_t(x)``
+    and ``f_t(x) = 0`` for ``x >= c``.  The column is the exact LoS
+    integral of the NFW density over ``|l| < sqrt(c^2 - x^2)`` (GL
+    quadrature; the integrand is smooth).  Mass conservation is exact:
+    ``int 2 pi x f_t dx = m_3(c) = ln(1+c) - c/(1+c)``, i.e. the halo
+    projects all of (and only) its 3D mass -- the property the
+    untruncated profile lacks (log-divergent 2D tail), which breaks the
+    two-halo neighbour mass budget.
+    """
+    from numpy.polynomial.legendre import leggauss
+    s, w = leggauss(int(n_los))
+    s = 0.5 * (s + 1.0)          # [0, 1]
+    w = 0.5 * w
+    lnx = np.linspace(np.log(1e-3), np.log(c * (1.0 - 1e-9)), int(n_x))
+    x = np.exp(lnx)
+    l_max = np.sqrt(np.maximum(c * c - x * x, 0.0))     # (Nx,)
+    l = l_max[:, None] * s[None, :]                     # (Nx, Nlos)
+    r = np.sqrt(x[:, None] ** 2 + l ** 2)
+    rho = 1.0 / (r * (1.0 + r) ** 2)                    # NFW / rho_s
+    # Sigma_t / (2 r_s rho_s) = (1/2) * 2 int_0^lmax rho dl / (2)   ->
+    # Sigma_t = 2 rho_s r_s int_0^lmax rho dl  =>  f_t = int_0^lmax rho dl
+    ft = (rho @ w) * l_max
+    return lnx, ft
+
+
 def wright_brainerd_g(x, eps=_WB_SERIES_WINDOW):
     """Wright & Brainerd (2000) centered NFW excess kernel g(x):
     ``DeltaSigma_cen = r_s rho_s g(x)``.  Analytic, with a Taylor
