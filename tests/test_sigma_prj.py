@@ -130,3 +130,27 @@ def test_closure_sums_to_one(cosmo, sel_bias, nfw):
     ratio = sp(R, 20.0, 0.5) / T
     assert (np.abs(ratio - 1.0) < 0.05).all(), (
         f"closure cl/TwoHalo = {ratio} -- sum rule violated")
+
+
+def test_closure_rnd_mean_sheet(cosmo, sel_bias, nfw):
+    """The `1`-part of the (1 + b_sel b xi) bracket under closure: the
+    rnd piece must equal the mean-field sheet rho_m * int dchi w_z --
+    the complete matter content projects to exactly the mean surface
+    density (both sum rules must hold for the same integrand)."""
+    import os
+    from richness_selection import NFWMiscentered
+    from richness_selection.nfw import RHO_CRIT_0
+    from richness_selection.photoz import w_z as _wz
+    table_dir = os.environ.get("RICHNESS_SELECTION_NFW_DIR")
+    nfw_m = (NFWMiscentered(cosmo, table_dir=table_dir, kind="m200m")
+             if table_dir else NFWMiscentered(cosmo, kind="m200m"))
+    sp = SigmaPrj(cosmo, sel_bias, nfw_m, tmap="comoving", closure=True)
+    R = np.array([3.0, 10.0, 20.0])
+    dec = sp(R, 20.0, 0.5, return_decomposition=True)
+    rho_m = cosmo.Om0 * 2.77533742639e11
+    zs = np.linspace(0.05, 0.95, 2000)
+    sheet = rho_m * np.trapezoid(_wz(zs, 0.5), cosmo.chi(zs)) * 1e-12
+    ratio = dec["rnd"] / sheet
+    assert (np.abs(ratio - 1.0) < 0.01).all(), (
+        f"closure rnd / mean-field sheet = {ratio} -- the 1-part of the "
+        f"bracket does not close")
